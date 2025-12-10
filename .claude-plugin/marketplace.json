@@ -1,0 +1,20 @@
+{
+  "name": "pproenca",
+  "version": "1.0.7",
+  "description": "Personal plugins for Claude Code",
+  "owner": {
+    "name": "Pedro Proenca"
+  },
+  "plugins": [
+    {
+      "name": "dev-workflow",
+      "description": "Development workflow with TDD, debugging, and collaboration skills",
+      "version": "1.0.7",
+      "author": {
+        "name": "Pedro Proenca"
+      },
+      "source": "./",
+      "category": "development"
+    }
+  ]
+}
