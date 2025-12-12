@@ -52,6 +52,7 @@ Before parallel execution:
     │
     ├─ Step 2: Task tool (dev-workflow:code-explorer)
     ├─ Step 4: Task tool (dev-workflow:code-architect)
+    │           └─ Uses: pragmatic-architecture skill
     ├─ Step 5: Save plan
     │
     └─ Step 6: "Execute now" selected
@@ -64,6 +65,7 @@ Before parallel execution:
            ├─ Step 3: Execute tasks (Task tool per task)
            ├─ Step 4: Final Code Review
            │     ├─ Task tool (dev-workflow:code-reviewer)
+           │     │   └─ Uses: pragmatic-architecture skill
            │     └─ Skill("dev-workflow:receiving-code-review")
            └─ Step 5: Finish Branch
                  └─ Skill("dev-workflow:finishing-a-development-branch")
@@ -84,6 +86,7 @@ Before parallel execution:
            │     └─ AskUserQuestion between batches
            ├─ Step 6: Final Code Review
            │     ├─ Task tool (dev-workflow:code-reviewer)
+           │     │   └─ Uses: pragmatic-architecture skill
            │     └─ Skill("dev-workflow:receiving-code-review")
            └─ Step 7: Complete
                  └─ Skill("dev-workflow:finishing-a-development-branch")
@@ -96,12 +99,14 @@ requesting-code-review (WHEN to review)
         │
         ▼
 Task tool (dev-workflow:code-reviewer) (DOES the review)
+        │  └─ Checks: testing-anti-patterns + pragmatic-architecture
         │
         ▼
 Skill("dev-workflow:receiving-code-review") (PROCESS feedback)
         │
         ├── Critical → fix immediately, test, commit
         ├── Important → fix before proceeding, test, commit
+        ├── Architecture → simplify over-engineered code
         ├── Unclear → ask clarification FIRST
         └── Wrong → push back with reasoning
         │
@@ -153,6 +158,10 @@ USER REQUEST
     │                                              ▼
     │                                        using-git-worktrees
     │
+    ├── "Design/architect/structure" ──────► pragmatic-architecture
+    │       │                                (via code-architect agent)
+    │       └── Prevents over-engineering
+    │
     ├── "Implement/add/write" ─────────────► TDD (always)
     │       │
     │       └── "Is this test good?" ──────► testing-anti-patterns
@@ -168,6 +177,10 @@ USER REQUEST
     │                                        defense-in-depth
     │
     ├── "Review my code" ──────────────────► requesting-code-review
+    │       │                                     │
+    │       │                                     ▼
+    │       │                              code-reviewer agent
+    │       │                              (uses pragmatic-architecture)
     │       │
     │       └── Feedback received ─────────► receiving-code-review
     │
@@ -184,6 +197,13 @@ USER REQUEST
 | using-git-worktrees                | Before implementation | Create isolated workspace |
 | finishing-a-development-branch     | After all tasks       | Clean merge to main       |
 
+### Architecture Skills (design quality)
+
+| Skill                  | When                      | What It Does                        |
+| ---------------------- | ------------------------- | ----------------------------------- |
+| pragmatic-architecture | Design/planning/review    | Prevents over-engineering           |
+| defense-in-depth       | After bug fix             | Add validation at each layer        |
+
 ### Execution Skills (how to work)
 
 | Skill                       | When                      | What It Does                        |
@@ -199,6 +219,7 @@ USER REQUEST
 | verification-before-completion | Any claim                    | Run command before claiming result |
 | requesting-code-review         | Before merge / after feature | Dispatch code-reviewer agent       |
 | receiving-code-review          | After code-reviewer returns  | Verify and implement feedback      |
+| testing-anti-patterns          | Reviewing test code          | Identify test quality issues       |
 
 ## Completion Signals
 
@@ -245,6 +266,18 @@ This signals to both user and model that the workflow is finished.
 verification-before-completion is a **principle** that applies everywhere.
 TDD is a **methodology** for implementation.
 
+### pragmatic-architecture vs defense-in-depth
+
+| Situation                     | Skill                    |
+| ----------------------------- | ------------------------ |
+| Designing new feature         | pragmatic-architecture   |
+| Reviewing proposed structure  | pragmatic-architecture   |
+| After finding/fixing bug      | defense-in-depth         |
+| Adding validation layers      | defense-in-depth         |
+
+pragmatic-architecture is about **avoiding complexity**.
+defense-in-depth is about **adding safety layers**.
+
 ## Skill Chains
 
 ### Feature Implementation (autonomous)
@@ -257,6 +290,7 @@ using-git-worktrees
     │
     ▼
 /dev-workflow:write-plan
+    │   └─ code-architect uses pragmatic-architecture
     │
     ▼ (Step 6: "Execute now")
 Skill("dev-workflow:subagent-driven-development")
@@ -264,6 +298,8 @@ Skill("dev-workflow:subagent-driven-development")
     ├─ TDD (each task via Task tool)
     │
     ├─ Task tool (dev-workflow:code-reviewer)
+    │   ├─ Uses: testing-anti-patterns
+    │   ├─ Uses: pragmatic-architecture
     │   └─ Skill("dev-workflow:receiving-code-review")
     │
     └─ Skill("dev-workflow:finishing-a-development-branch")
@@ -279,6 +315,7 @@ using-git-worktrees
     │
     ▼
 /dev-workflow:write-plan
+    │   └─ code-architect uses pragmatic-architecture
     │
     ▼ (Step 6: "Batch execution")
 /dev-workflow:execute-plan (new session)
@@ -287,6 +324,8 @@ using-git-worktrees
     ├─ AskUserQuestion (each batch)
     │
     ├─ Task tool (dev-workflow:code-reviewer)
+    │   ├─ Uses: testing-anti-patterns
+    │   ├─ Uses: pragmatic-architecture
     │   └─ Skill("dev-workflow:receiving-code-review")
     │
     └─ Skill("dev-workflow:finishing-a-development-branch")
