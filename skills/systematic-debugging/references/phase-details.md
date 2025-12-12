@@ -136,7 +136,7 @@ When error is deep in call stack, use **root-cause-tracing** skill:
 - No other tests broken?
 - Issue actually resolved?
 
-### If Fix Doesn't Work
+**If Fix Doesn't Work:**
 
 - STOP
 - Count: How many fixes have been tried?

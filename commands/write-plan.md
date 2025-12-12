@@ -20,8 +20,6 @@ $ARGUMENTS
 
 This command creates a plan file, not a state file. Multiple terminals can run `/dev-workflow:write-plan` simultaneously without conflict. State files are only created during execution.
 
-For parallel executions of the same plan, each must be in a separate worktree. Worktrees are created automatically by `/dev-workflow:execute-plan`.
-
 ## Step 1: Understand Request
 
 **If `@docs/plans/*-design.md` provided:** Read it, use as context, skip to Step 2.
@@ -155,13 +153,11 @@ Each task: one logical unit (10-30 minutes), TDD cycle included.
        result = function(input)
        assert result == expected
    ```
-````
 
 2. Run: `pytest tests/path/test.py::test_behavior -v`
    Expected: FAIL
 
 3. Implement:
-
    ```python
    def function(input):
        return expected
@@ -171,7 +167,6 @@ Each task: one logical unit (10-30 minutes), TDD cycle included.
    Expected: PASS
 
 5. Commit: `git add -A && git commit -m "feat: [description]"`
-
 ````
 
 ### Requirements
@@ -202,13 +197,17 @@ AskUserQuestion:
       description: "Provide feedback to adjust the plan"
 ```
 
-### If "Execute now" selected:
+**If "Execute now" selected:**
 
 Mark "Execution Handoff" `completed` in TodoWrite.
 
-Invoke `/dev-workflow:execute-plan docs/plans/[filename].md`
+Invoke the execute-plan command:
 
-### If "Later" selected:
+```text
+/dev-workflow:execute-plan docs/plans/[filename].md
+```
+
+**If "Later" selected:**
 
 Report:
 
@@ -221,7 +220,7 @@ To execute later:
 
 Mark "Execution Handoff" `completed` in TodoWrite.
 
-### If "Revise plan" selected:
+**If "Revise plan" selected:**
 
 Respond with:
 
@@ -230,6 +229,7 @@ What would you like me to change?
 ```
 
 Wait for feedback. When provided:
+
 1. Update plan file
 2. Report changes briefly
 3. Return to Step 6
@@ -253,11 +253,10 @@ Wait for feedback. When provided:
 
 ## Integration
 
-| Component                                  | How write-plan uses it                              |
-| ------------------------------------------ | --------------------------------------------------- |
-| `dev-workflow:code-explorer`               | Step 2: Codebase survey                             |
-| `dev-workflow:code-architect`              | Step 4: Architecture design                         |
-| `dev-workflow:test-driven-development`     | Step 5: Task methodology (referenced in plan)       |
-| `/dev-workflow:execute-plan`               | Step 6: Execution handoff                           |
-| `/dev-workflow:brainstorm`                 | Upstream: Creates design docs this command consumes |
-````
+| Component                              | How write-plan uses it                      |
+| -------------------------------------- | ------------------------------------------- |
+| `dev-workflow:code-explorer`           | Step 2: Codebase survey                     |
+| `dev-workflow:code-architect`          | Step 4: Architecture design                 |
+| `dev-workflow:test-driven-development` | Step 5: Task methodology (referenced)       |
+| `/dev-workflow:execute-plan`           | Step 6: Execution handoff                   |
+| `/dev-workflow:brainstorm`             | Upstream: Creates design docs               |

@@ -14,13 +14,6 @@ $ARGUMENTS
 
 **If empty or file not found:** Stop with error "Plan file not found or not specified"
 
-## Path Resolution
-
-```bash
-STATE_FILE="$(git rev-parse --show-toplevel)/.claude/dev-workflow-state.local.md"
-echo "STATE_FILE:$STATE_FILE"
-```
-
 ## Execution Behavior
 
 **This is a continuous workflow within each batch.**
@@ -35,7 +28,7 @@ Execute steps in sequence. The only permitted stops are:
 
 ## Concurrency
 
-State file `$STATE_FILE` is worktree-scoped.
+State file is worktree-scoped (`.claude/dev-workflow-state.local.md`).
 
 **Parallel executions:** Each must be in separate worktree.
 **Same worktree:** Only one execution at a time.
@@ -44,119 +37,135 @@ State file `$STATE_FILE` is worktree-scoped.
 
 ## MANDATORY FIRST ACTION: Worktree Check
 
-**BEFORE ANY OTHER STEP**, run this check:
-
-```bash
-source "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh"
-IS_MAIN=$(is_main_repo && echo "true" || echo "false")
-echo "IS_MAIN_REPO:$IS_MAIN"
-```
-
-**Decision based on output:**
-
-| Output               | Action                                  |
-| -------------------- | --------------------------------------- |
-| `IS_MAIN_REPO:true`  | **STOP. Go to Worktree Setup below.**   |
-| `IS_MAIN_REPO:false` | Proceed to Step 1 (already in worktree) |
-
----
-
-## Worktree Setup (when IS_MAIN_REPO:true)
-
-**You are in the main repository. Create an isolated worktree before execution.**
-
-### Create worktree
-
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh"
 PLAN_FILE="$ARGUMENTS"
-WORKTREE_PATH="$(setup_worktree_with_handoff "$PLAN_FILE" "pending")"
-echo "✓ Worktree created: $WORKTREE_PATH"
+PLAN_ABS="$(realpath "$PLAN_FILE")"
+IS_MAIN=$(is_main_repo && echo "true" || echo "false")
+echo "PLAN_ABS:$PLAN_ABS"
+echo "IS_MAIN_REPO:$IS_MAIN"
 ```
 
-### Ask how to proceed
+| IS_MAIN_REPO | Action                       |
+| ------------ | ---------------------------- |
+| `true`       | Go to **Worktree Setup**     |
+| `false`      | Go to **Step 1: Initialize** |
 
-Use AskUserQuestion:
+---
+
+## Worktree Setup
+
+**You are in the main repository. Create an isolated worktree before execution.**
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh"
+PLAN_ABS="$(realpath "$ARGUMENTS")"
+WORKTREE_PATH="$(setup_worktree_with_state "$PLAN_ABS" "execute-plan")"
+STATE_FILE="${WORKTREE_PATH}/.claude/dev-workflow-state.local.md"
+
+echo "WORKTREE_PATH:$WORKTREE_PATH"
+echo "STATE_FILE:$STATE_FILE"
+```
+
+**Choose execution method:**
 
 ```claude
 AskUserQuestion:
-  header: "Continue"
-  question: "Worktree created at $WORKTREE_PATH. How should execution proceed?"
+  header: "Execute"
+  question: "Worktree created at $WORKTREE_PATH. How to proceed?"
   multiSelect: false
   options:
-    - label: "Continue here"
-      description: "Switch to worktree and execute with subagents"
+    - label: "Subagents"
+      description: "Dispatch opus subagent to execute in worktree"
     - label: "New terminal"
-      description: "Auto-open Terminal.app in worktree"
+      description: "Open Terminal.app in worktree"
+    - label: "Cancel"
+      description: "Keep worktree, don't execute"
 ```
 
-### If "Continue here" selected:
+**If "Subagents" selected:**
+
+Update workflow type in state:
 
 ```bash
-source "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh"
-WORKTREE_PATH="$(activate_worktree "subagent")"
-cd "$WORKTREE_PATH"
-echo "READY:$WORKTREE_PATH"
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+frontmatter_set "$STATE_FILE" "workflow" "subagent"
 ```
 
-Use `Skill("dev-workflow:subagent-driven-development")`. Skill reads plan from handoff.
+Dispatch Task subagent with explicit paths:
 
-**STOP HERE.** The skill takes over execution.
+```claude
+Task tool:
+  model: opus
+  prompt: |
+    Execute plan using subagent-driven development.
 
-### If "New terminal" selected:
+    ## EXPLICIT PATHS (use these, do not discover)
+
+    WORKTREE_PATH: [WORKTREE_PATH]
+    STATE_FILE: [STATE_FILE]
+    PLAN_FILE: [PLAN_ABS]
+
+    ## FIRST ACTIONS
+
+    1. cd "[WORKTREE_PATH]"
+    2. cat "[STATE_FILE]"
+    3. Skill("dev-workflow:subagent-driven-development")
+
+    Execute until complete.
+```
+
+Report and **STOP**.
+
+**If "New terminal" selected:**
 
 ```bash
-source "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh"
-WORKTREE_PATH="$(activate_worktree "subagent")"
 "${CLAUDE_PLUGIN_ROOT}/scripts/open-terminal.sh" "$WORKTREE_PATH"
 echo "LAUNCHED:$WORKTREE_PATH"
 ```
 
-Report success and **STOP HERE**. The new session continues in Terminal.app.
+Report success and **STOP**. The new session continues in Terminal.app.
+
+**If "Cancel" selected:**
+
+Report worktree location:
+
+```text
+Worktree created at: [WORKTREE_PATH]
+
+To remove if not needed:
+  git worktree remove [WORKTREE_PATH]
+```
+
+**STOP**.
 
 ---
 
 ## Step 1: Initialize
 
-**Only reach this step if IS_MAIN_REPO was false (already in worktree).**
+**You are already in a worktree (IS_MAIN_REPO was false).**
 
-Plan file: `$ARGUMENTS`
-
-Verify plan exists:
+Find state file:
 
 ```bash
-test -f "$ARGUMENTS" && echo "EXISTS" || echo "MISSING"
+STATE_FILE="$(git rev-parse --show-toplevel)/.claude/dev-workflow-state.local.md"
+echo "STATE_FILE:$STATE_FILE"
+test -f "$STATE_FILE" && echo "FOUND" || echo "NOT_FOUND"
 ```
 
-If MISSING: stop with error.
-
-Check for existing state:
+**If NOT_FOUND:** Create state (direct execution without worktree setup):
 
 ```bash
-test -f "$STATE_FILE" && echo "RESUME" || echo "NEW"
-```
-
-If RESUME: Read state file and go to Resume Flow below.
-
-If NEW:
-
-Capture baseline and count tasks:
-
-```bash
+WORKTREE_PATH="$(git rev-parse --show-toplevel)"
+PLAN_ABS="$(realpath "$ARGUMENTS")"
+TOTAL_TASKS=$(grep -c "^### Task [0-9]\+:" "$PLAN_ABS")
 BASE_SHA=$(git rev-parse HEAD)
-PLAN_ABS=$(realpath "$ARGUMENTS")
-TOTAL_TASKS=$(grep -c "^### Task [0-9]\+:" "$ARGUMENTS")
 
-mkdir -p .claude
-```
-
-Create state file:
-
-```bash
 mkdir -p "$(dirname "$STATE_FILE")"
 cat > "$STATE_FILE" << EOF
 ---
 workflow: execute-plan
+worktree: $WORKTREE_PATH
 plan: $PLAN_ABS
 base_sha: $BASE_SHA
 current_task: 0
@@ -164,24 +173,37 @@ total_tasks: $TOTAL_TASKS
 last_commit: $BASE_SHA
 enabled: true
 ---
-
-$(basename "$ARGUMENTS" .md) - initializing
 EOF
 ```
+
+**Read state:**
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+WORKTREE=$(frontmatter_get "$STATE_FILE" "worktree" "")
+PLAN=$(frontmatter_get "$STATE_FILE" "plan" "")
+CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
+ENABLED=$(frontmatter_get "$STATE_FILE" "enabled" "true")
+echo "WORKTREE:$WORKTREE"
+echo "PLAN:$PLAN"
+echo "PROGRESS:$CURRENT/$TOTAL"
+echo "ENABLED:$ENABLED"
+```
+
+**If ENABLED is false:** Ask user if they want to continue.
+
+**If CURRENT > 0:** This is a resume - rebuild TodoWrite from current position.
 
 Extract task list for TodoWrite:
 
 ```bash
-grep -E "^### Task [0-9]+:" "$ARGUMENTS" | sed 's/^### Task \([0-9]*\): \(.*\)/Task \1: \2/'
+grep -E "^### Task [0-9]+:" "$PLAN" | sed 's/^### Task \([0-9]*\): \(.*\)/Task \1: \2/'
 ```
 
-Use TodoWrite to create items for: all plan tasks + "Final Code Review" + "Finish Branch".
+Use TodoWrite for: all tasks + "Final Code Review" + "Finish Branch".
 
-**Immediately proceed to Step 2.**
-
-## Step 2: Choose Execution Mode
-
-Use AskUserQuestion:
+## Step 2: Choose Mode
 
 ```claude
 AskUserQuestion:
@@ -193,32 +215,22 @@ AskUserQuestion:
       description: "Fresh context per task, faster execution"
     - label: "This session"
       description: "Sequential in current context, more control"
-    - label: "Parallel session"
-      description: "Open new terminal, manual coordination"
 ```
 
-If Subagents:
-
-Update state file:
+**If Subagents:**
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 frontmatter_set "$STATE_FILE" "workflow" "subagent"
 ```
 
-Use `Skill("dev-workflow:subagent-driven-development")` with plan file. Skill takes over.
+Use `Skill("dev-workflow:subagent-driven-development")` - it will read paths from state.
 
-If This session:
-
-Proceed to Step 3.
-
-If Parallel session:
-
-Report worktree path and instructions. Stop.
+**If This session:** Continue to Step 3.
 
 ## Step 3: Analyze Dependencies
 
-Read plan file, extract file paths from each task:
+Extract file paths from each task section:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
@@ -230,25 +242,25 @@ awk '/^### Task [0-9]+:/,/^### Task [0-9]+:|^## /' "$PLAN" | \
 
 Build mental model of task dependencies for batching. Tasks sharing files must be sequential.
 
-**Immediately proceed to Step 4.**
-
-## Step 4: Execute Tasks (Sequential Mode)
+## Step 4: Execute Tasks (Sequential)
 
 For each task:
 
-### 4a. Read current position
+### 4a. Read position
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-CURRENT="$(frontmatter_get "$STATE_FILE" "current_task" "0")"
+CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
 NEXT=$((CURRENT + 1))
+echo "EXECUTING:Task $NEXT of $TOTAL"
 ```
 
 Mark task `in_progress` in TodoWrite.
 
-### 4b. Implement task
+### 4b. Implement
 
-Read task details from plan. Implement completely.
+Read task from plan. Follow TDD: write failing test first, then implement.
 
 Run tests:
 
@@ -261,30 +273,26 @@ else echo "NO_TEST_COMMAND"; fi
 
 If tests fail: fix before proceeding.
 
-### 4c. Commit with conventional format
+### 4c. Commit
 
 ```bash
-# Use conventional commits - NOT task-indexed
 git add -A
-git commit -m "feat(scope): description of change"
+git commit -m "feat(scope): description"
 ```
 
 ### 4d. Update state
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-NEXT_TASK=$((CURRENT + 1))
-frontmatter_set "$STATE_FILE" "current_task" "$NEXT_TASK"
+CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+NEXT=$((CURRENT + 1))
+frontmatter_set "$STATE_FILE" "current_task" "$NEXT"
 frontmatter_set "$STATE_FILE" "last_commit" "$(git rev-parse HEAD)"
 ```
 
 Mark task `completed` in TodoWrite.
 
-### 4e. Batch checkpoint
-
-After every 3 tasks:
-
-Use AskUserQuestion:
+### 4e. Batch checkpoint (every 3 tasks)
 
 ```claude
 AskUserQuestion:
@@ -306,8 +314,6 @@ If Pause: stop. State preserved for resume.
 
 If implementation hits a blocker:
 
-Use AskUserQuestion:
-
 ```claude
 AskUserQuestion:
   header: "Blocker"
@@ -326,103 +332,69 @@ AskUserQuestion:
 
 After all tasks complete:
 
-Mark "Final Code Review" as `in_progress` in TodoWrite.
-
-Read BASE_SHA from state file:
+Mark "Final Code Review" `in_progress` in TodoWrite.
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-BASE_SHA="$(frontmatter_get "$STATE_FILE" "base_sha" "")"
-git diff "$BASE_SHA"..HEAD
+BASE_SHA=$(frontmatter_get "$STATE_FILE" "base_sha" "")
+WORKTREE=$(frontmatter_get "$STATE_FILE" "worktree" "")
+PLAN=$(frontmatter_get "$STATE_FILE" "plan" "")
+git diff "$BASE_SHA"..HEAD --stat
 ```
 
-Dispatch code-reviewer:
+Dispatch code-reviewer with explicit paths:
 
 ```claude
 Task tool (dev-workflow:code-reviewer):
   model: sonnet
   prompt: |
     Review changes from this plan.
-    Plan: [plan file]
-    BASE_SHA: [from state]
+    WORKTREE_PATH: [WORKTREE]
+    PLAN_FILE: [PLAN]
+    BASE_SHA: [BASE_SHA]
+    First: cd "[WORKTREE_PATH]"
+    Then: git diff [BASE_SHA]..HEAD
     Focus: Cross-cutting concerns, consistency.
 ```
 
 Use `Skill("dev-workflow:receiving-code-review")` to process feedback.
 
-Mark "Final Code Review" as `completed` in TodoWrite.
+Mark "Final Code Review" `completed` in TodoWrite.
 
 ## Step 7: Finish
 
-Mark "Finish Branch" as `in_progress` in TodoWrite.
+Mark "Finish Branch" `in_progress` in TodoWrite.
 
 Use `Skill("dev-workflow:finishing-a-development-branch")`.
-
-Remove state file:
 
 ```bash
 rm -f "$STATE_FILE"
 ```
 
-Mark "Finish Branch" as `completed` in TodoWrite.
+Mark "Finish Branch" `completed` in TodoWrite.
 
-## Resume Flow
-
-When state file exists at Step 1:
-
-**1. Read state:**
-
-```bash
-source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-PLAN="$(frontmatter_get "$STATE_FILE" "plan" "")"
-CURRENT="$(frontmatter_get "$STATE_FILE" "current_task" "0")"
-TOTAL="$(frontmatter_get "$STATE_FILE" "total_tasks" "0")"
-ENABLED="$(frontmatter_get "$STATE_FILE" "enabled" "true")"
-```
-
-**2. Verify enabled:**
-
-If `enabled: false`, ask user if they want to continue.
-
-**3. Verify plan exists:**
-
-```bash
-test -f "$PLAN" || echo "Plan file missing: $PLAN"
-```
-
-**4. Rebuild TodoWrite** based on current_task position.
-
-**5. Resume from current_task.**
+---
 
 ## Recovery
 
-**View state:**
-
-```bash
-cat "$STATE_FILE"
-```
-
-**Rollback:**
-
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-BASE_SHA="$(frontmatter_get "$STATE_FILE" "base_sha" "")"
+STATE_FILE="[path]"
+
+# View
+cat "$STATE_FILE"
+
+# Rollback
+BASE_SHA=$(frontmatter_get "$STATE_FILE" "base_sha" "")
 git reset --hard "$BASE_SHA"
-rm "$STATE_FILE"
-```
-
-**Force restart:**
-
-```bash
 rm "$STATE_FILE"
 ```
 
 ## Integration
 
-| Component                                  | How execute-plan uses it                     |
-| ------------------------------------------ | -------------------------------------------- |
-| `dev-workflow:code-explorer`               | Step 2: Codebase survey (via write-plan)     |
-| `dev-workflow:code-architect`              | Step 4: Architecture design (via write-plan) |
-| `dev-workflow:subagent-driven-development` | Step 2: "Subagents" mode handoff             |
-| `dev-workflow:code-reviewer`               | Step 6: Final code review                    |
-| `/dev-workflow:brainstorm`                 | Upstream: Creates design docs                |
+| Component                                  | How execute-plan uses it                 |
+| ------------------------------------------ | ---------------------------------------- |
+| `dev-workflow:subagent-driven-development` | Step 2: "Subagents" mode handoff         |
+| `dev-workflow:code-reviewer`               | Step 6: Final code review                |
+| `dev-workflow:receiving-code-review`       | Step 6: Process review feedback          |
+| `dev-workflow:finishing-a-development-branch` | Step 7: Branch completion             |

@@ -132,7 +132,7 @@ cleanup_all_worktrees() {
   fi
 }
 
-# Create worktree + handoff state in one call
+# Create worktree + handoff state in one call (DEPRECATED - use setup_worktree_with_state)
 # Usage: setup_worktree_with_handoff <plan_file> [mode]
 # Returns: worktree path
 setup_worktree_with_handoff() {
@@ -146,6 +146,47 @@ setup_worktree_with_handoff() {
 
   create_handoff_state "$plan_abs" "$worktree_path" "$mode"
 
+  echo "$worktree_path"
+}
+
+# Create worktree + full state file in one call
+# Usage: setup_worktree_with_state <plan_file> <workflow_type>
+# workflow_type: "execute-plan" | "subagent"
+# Returns: worktree path
+# Outputs to stderr: STATE_FILE path
+setup_worktree_with_state() {
+  local plan_file="$1"
+  local workflow_type="${2:-execute-plan}"
+
+  local plan_abs worktree_name worktree_path total_tasks base_sha state_file
+  plan_abs="$(realpath "$plan_file")"
+  worktree_name="$(generate_worktree_name "$plan_file")"
+  worktree_path="$(create_worktree "$worktree_name")"
+  total_tasks=$(grep -c "^### Task [0-9]\+:" "$plan_abs" || echo "0")
+  base_sha=$(git rev-parse HEAD)
+  state_file="${worktree_path}/.claude/dev-workflow-state.local.md"
+
+  mkdir -p "${worktree_path}/.claude"
+  cat > "$state_file" << EOF
+---
+workflow: ${workflow_type}
+worktree: ${worktree_path}
+plan: ${plan_abs}
+base_sha: ${base_sha}
+current_task: 0
+total_tasks: ${total_tasks}
+last_commit: ${base_sha}
+enabled: true
+---
+
+Initialized from ${workflow_type}
+EOF
+
+  # Output state file path to stderr for capture
+  echo "STATE_FILE:${state_file}" >&2
+  echo "TOTAL_TASKS:${total_tasks}" >&2
+
+  # Return worktree path on stdout
   echo "$worktree_path"
 }
 
@@ -196,20 +237,21 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     handoff) create_handoff_state "$2" "$3" "$4" ;;
     cleanup) cleanup_all_worktrees ;;
     setup) setup_worktree_with_handoff "$2" "$3" ;;
+    setup-state) setup_worktree_with_state "$2" "$3" ;;
     pending) get_pending_worktree ;;
     activate) activate_worktree "$2" ;;
     set-mode) set_handoff_mode "$2" "$3" ;;
     *)
-      echo "Usage: $0 {create|remove|list|is-main|handoff|cleanup|setup|pending|activate|set-mode} [args]"
+      echo "Usage: $0 {create|remove|list|is-main|setup-state|cleanup|...} [args]"
       echo ""
       echo "Commands:"
       echo "  create <name>                    Create worktree at .worktrees/<name>"
       echo "  remove <name>                    Remove worktree by name or path"
       echo "  list                             List all .worktrees/"
       echo "  is-main                          Check if in main repo"
-      echo "  handoff <plan> <wt_path> <mode>  Create handoff state"
+      echo "  setup-state <plan> <workflow>    Create worktree + state file (preferred)"
+      echo "  setup <plan> [mode]              Create worktree + handoff (deprecated)"
       echo "  cleanup                          Remove all worktrees (interactive)"
-      echo "  setup <plan> [mode]              Create worktree + handoff in one call"
       echo "  pending                          Get most recent pending worktree"
       echo "  activate <mode>                  Set mode and return pending worktree path"
       echo "  set-mode <wt_path> <mode>        Update handoff mode"
