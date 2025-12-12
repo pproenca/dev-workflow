@@ -16,7 +16,10 @@ $ARGUMENTS
 
 ## Path Resolution
 
-!`STATE_FILE="$(git rev-parse --show-toplevel)/.claude/dev-workflow-state.local.md" && echo "STATE_FILE:$STATE_FILE"`
+```bash
+STATE_FILE="$(git rev-parse --show-toplevel)/.claude/dev-workflow-state.local.md"
+echo "STATE_FILE:$STATE_FILE"
+```
 
 ## Execution Behavior
 
@@ -37,30 +40,48 @@ State file `$STATE_FILE` is worktree-scoped.
 **Parallel executions:** Each must be in separate worktree.
 **Same worktree:** Only one execution at a time.
 
-## Step 0: Setup Worktree (Auto)
+---
 
-Check if in main repo:
+## MANDATORY FIRST ACTION: Worktree Check
 
-!`"${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh" is-main`
-
-If "false": proceed to Step 1.
-
-If "true":
-
-Create worktree with pending handoff:
+**BEFORE ANY OTHER STEP**, run this check:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh"
-WORKTREE_PATH="$(setup_worktree_with_handoff "$ARGUMENTS" "pending")"
-echo "✓ Created: $WORKTREE_PATH"
+IS_MAIN=$(is_main_repo && echo "true" || echo "false")
+echo "IS_MAIN_REPO:$IS_MAIN"
 ```
+
+**Decision based on output:**
+
+| Output               | Action                                  |
+| -------------------- | --------------------------------------- |
+| `IS_MAIN_REPO:true`  | **STOP. Go to Worktree Setup below.**   |
+| `IS_MAIN_REPO:false` | Proceed to Step 1 (already in worktree) |
+
+---
+
+## Worktree Setup (when IS_MAIN_REPO:true)
+
+**You are in the main repository. Create an isolated worktree before execution.**
+
+### Create worktree
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh"
+PLAN_FILE="$ARGUMENTS"
+WORKTREE_PATH="$(setup_worktree_with_handoff "$PLAN_FILE" "pending")"
+echo "✓ Worktree created: $WORKTREE_PATH"
+```
+
+### Ask how to proceed
 
 Use AskUserQuestion:
 
 ```claude
 AskUserQuestion:
   header: "Continue"
-  question: "Worktree created. How should execution proceed?"
+  question: "Worktree created at $WORKTREE_PATH. How should execution proceed?"
   multiSelect: false
   options:
     - label: "Continue here"
@@ -69,7 +90,7 @@ AskUserQuestion:
       description: "Auto-open Terminal.app in worktree"
 ```
 
-If **Continue here**:
+### If "Continue here" selected:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh"
@@ -80,7 +101,9 @@ echo "READY:$WORKTREE_PATH"
 
 Use `Skill("dev-workflow:subagent-driven-development")`. Skill reads plan from handoff.
 
-If **New terminal**:
+**STOP HERE.** The skill takes over execution.
+
+### If "New terminal" selected:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh"
@@ -89,9 +112,13 @@ WORKTREE_PATH="$(activate_worktree "subagent")"
 echo "LAUNCHED:$WORKTREE_PATH"
 ```
 
-Report success and **stop here**. The new session continues in Terminal.app.
+Report success and **STOP HERE**. The new session continues in Terminal.app.
+
+---
 
 ## Step 1: Initialize
+
+**Only reach this step if IS_MAIN_REPO was false (already in worktree).**
 
 Plan file: `$ARGUMENTS`
 
@@ -209,7 +236,7 @@ Build mental model of task dependencies for batching. Tasks sharing files must b
 
 For each task:
 
-**4a. Read current position**
+### 4a. Read current position
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
@@ -219,7 +246,7 @@ NEXT=$((CURRENT + 1))
 
 Mark task `in_progress` in TodoWrite.
 
-**4b. Implement task**
+### 4b. Implement task
 
 Read task details from plan. Implement completely.
 
@@ -234,7 +261,7 @@ else echo "NO_TEST_COMMAND"; fi
 
 If tests fail: fix before proceeding.
 
-**4c. Commit with conventional format**
+### 4c. Commit with conventional format
 
 ```bash
 # Use conventional commits - NOT task-indexed
@@ -242,7 +269,7 @@ git add -A
 git commit -m "feat(scope): description of change"
 ```
 
-**4d. Update state**
+### 4d. Update state
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
@@ -253,7 +280,7 @@ frontmatter_set "$STATE_FILE" "last_commit" "$(git rev-parse HEAD)"
 
 Mark task `completed` in TodoWrite.
 
-**4e. Batch checkpoint**
+### 4e. Batch checkpoint
 
 After every 3 tasks:
 
@@ -370,11 +397,13 @@ test -f "$PLAN" || echo "Plan file missing: $PLAN"
 ## Recovery
 
 **View state:**
+
 ```bash
 cat "$STATE_FILE"
 ```
 
 **Rollback:**
+
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 BASE_SHA="$(frontmatter_get "$STATE_FILE" "base_sha" "")"
@@ -383,16 +412,17 @@ rm "$STATE_FILE"
 ```
 
 **Force restart:**
+
 ```bash
 rm "$STATE_FILE"
 ```
 
 ## Integration
 
-| Component                                  | How execute-plan uses it                              |
-| ------------------------------------------ | --------------------------------------------------- |
-| `dev-workflow:code-explorer`               | Step 2: Codebase survey (via write-plan)            |
-| `dev-workflow:code-architect`              | Step 4: Architecture design (via write-plan)        |
-| `dev-workflow:subagent-driven-development` | Step 2: "Subagents" mode handoff                    |
-| `dev-workflow:code-reviewer`               | Step 6: Final code review                           |
-| `/dev-workflow:brainstorm`                 | Upstream: Creates design docs                       |
+| Component                                  | How execute-plan uses it                     |
+| ------------------------------------------ | -------------------------------------------- |
+| `dev-workflow:code-explorer`               | Step 2: Codebase survey (via write-plan)     |
+| `dev-workflow:code-architect`              | Step 4: Architecture design (via write-plan) |
+| `dev-workflow:subagent-driven-development` | Step 2: "Subagents" mode handoff             |
+| `dev-workflow:code-reviewer`               | Step 6: Final code review                    |
+| `/dev-workflow:brainstorm`                 | Upstream: Creates design docs                |
