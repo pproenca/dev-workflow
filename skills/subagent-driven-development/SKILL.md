@@ -18,227 +18,191 @@ After loading this skill, execute all steps until "Workflow complete". Only perm
 2. Blocker requiring user input
 3. Final completion report
 
-**Critical:** After ANY tool call completes, immediately make the next tool call.
-
-## Path Resolution
-
-Resolve absolute paths at start:
-
-```bash
-STATE_FILE="$(git rev-parse --show-toplevel)/.claude/dev-workflow-state.local.md"
-HANDOFF_FILE="$(git rev-parse --show-toplevel)/.claude/pending-handoff.local.md"
-echo "STATE_FILE:$STATE_FILE"
-```
+**Critical:** After ANY tool call completes, immediately make the next tool call. Do not narrate between tool calls.
 
 ## Concurrency
 
-State file `$STATE_FILE` is worktree-scoped.
+State file is worktree-scoped (`.claude/dev-workflow-state.local.md`).
 
 **Parallel executions:** Each must be in separate worktree.
+**Maximum 3 parallel subagents** per batch.
 
 ## Prerequisites
 
-1. **Session must use opus** - Orchestration requires opus-level reasoning
-2. **Plan file must exist** - Use `/dev-workflow:write-plan` first
+Before this skill loads, you should have received:
 
-If session uses sonnet/haiku:
+- `WORKTREE_PATH` - absolute path to the worktree
+- `STATE_FILE` - absolute path to state file
+- `PLAN_FILE` - absolute path to plan (also in state file)
 
-> This workflow requires opus. Switch to opus or use `/dev-workflow:execute-plan` instead.
+**If you don't have these paths:** Stop and report error. The caller must provide explicit paths.
 
-## Step 1: Initialize
+**Model requirement:** Orchestration requires opus-level reasoning. If session uses sonnet/haiku, consider using `/dev-workflow:execute-plan` instead for sequential execution.
 
-Determine plan file from handoff state or state file:
+## Step 0: Establish Context
+
+**FIRST**, change to the worktree and verify state:
+
+```bash
+# Use the WORKTREE_PATH from your prompt
+cd "[WORKTREE_PATH]"
+pwd
+
+# Verify state file
+cat "[STATE_FILE]"
+```
+
+Read the state file to extract all paths:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-if [[ -f "$HANDOFF_FILE" ]]; then
-  PLAN_FILE="$(frontmatter_get "$HANDOFF_FILE" "plan" "")"
-  rm -f "$HANDOFF_FILE"
-elif [[ -f "$STATE_FILE" ]]; then
-  PLAN_FILE="$(frontmatter_get "$STATE_FILE" "plan" "")"
-fi
-echo "PLAN_FILE:$PLAN_FILE"
+STATE_FILE="[STATE_FILE from your prompt]"
+
+WORKTREE=$(frontmatter_get "$STATE_FILE" "worktree" "")
+PLAN=$(frontmatter_get "$STATE_FILE" "plan" "")
+CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
+BASE_SHA=$(frontmatter_get "$STATE_FILE" "base_sha" "")
+
+echo "WORKTREE:$WORKTREE"
+echo "PLAN:$PLAN"
+echo "PROGRESS:$CURRENT/$TOTAL"
 ```
 
-If PLAN_FILE is empty, stop with error: "No plan file found. Run /dev-workflow:write-plan first."
+**Store these values - you will pass them to every subagent.**
 
-Read plan file. Extract task count:
+## Step 1: Setup TodoWrite
+
+Extract tasks and create TodoWrite items:
 
 ```bash
-BASE_SHA=$(git rev-parse HEAD)
-PLAN_ABS=$(realpath "$PLAN_FILE")
-TOTAL_TASKS=$(grep -c "^### Task [0-9]\+:" "$PLAN_FILE")
+grep -E "^### Task [0-9]+:" "$PLAN" | sed 's/^### Task \([0-9]*\): \(.*\)/Task \1: \2/'
 ```
 
-Check for existing state:
-
-```bash
-test -f "$STATE_FILE" && echo "RESUME" || echo "NEW"
-```
-
-If RESUME: go to Resume Flow below.
-
-If NEW, create state file:
-
-```bash
-mkdir -p "$(dirname "$STATE_FILE")"
-cat > "$STATE_FILE" << EOF
----
-workflow: subagent
-plan: $PLAN_ABS
-base_sha: $BASE_SHA
-current_task: 0
-total_tasks: $TOTAL_TASKS
-last_commit: $BASE_SHA
-enabled: true
----
-
-$(basename "$PLAN_FILE" .md) - initializing
-EOF
-```
-
-Extract task list for TodoWrite:
-
-```bash
-grep -E "^### Task [0-9]+:" "$PLAN_FILE" | sed 's/^### Task \([0-9]*\): \(.*\)/Task \1: \2/'
-```
-
-Use TodoWrite for all tasks + "Final Code Review" + "Finish Branch".
-
-**Immediately proceed to Step 2.**
+Use TodoWrite for: all tasks + "Final Code Review" + "Finish Branch".
 
 ## Step 2: Analyze Dependencies
 
-Extract file paths from each task section in the plan:
-
 ```bash
-source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-PLAN="$(frontmatter_get "$STATE_FILE" "plan" "")"
 awk '/^### Task [0-9]+:/,/^### Task [0-9]+:|^## /' "$PLAN" | \
   grep -E '(Create|Modify|Test):' | \
   grep -oE '`[^`]+`' | tr -d '`' | sort -u
 ```
 
-**Build dependency model:**
+Build dependency model:
 
-For each pair of tasks, check if they share files:
-
-- File overlap → Sequential (Task B after Task A)
-- No overlap → Can parallelize
-
-**Maximum 3 parallel subagents per batch.**
-
-**Immediately proceed to Step 3.**
+- File overlap → Sequential
+- No overlap → Can parallelize (max 3)
 
 ## Step 3: Execute Tasks
 
-### 3a. Identify Next Task(s)
-
-Read current position:
+### 3a. Check Progress
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-CURRENT="$(frontmatter_get "$STATE_FILE" "current_task" "0")"
-TOTAL="$(frontmatter_get "$STATE_FILE" "total_tasks" "0")"
+CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
+echo "PROGRESS:$CURRENT/$TOTAL"
 ```
 
-If CURRENT >= TOTAL: skip to Step 4.
+If CURRENT >= TOTAL: Go to Step 4.
 
-Determine next batch based on dependency analysis.
+### 3b. Select Model
 
-### 3b. Select Model Per Task
+| Model  | Use For                          |
+| ------ | -------------------------------- |
+| haiku  | Simple tasks (<3 files)          |
+| sonnet | Standard tasks (default)         |
+| opus   | Complex (5+ files, architecture) |
 
-| Model  | Use For                                 |
-| ------ | --------------------------------------- |
-| haiku  | Simple tasks (<3 files, single concern) |
-| sonnet | Standard tasks (default)                |
-| opus   | Complex (5+ files, architecture)        |
+### 3c. Dispatch Task Subagent
 
-### 3c. Dispatch Subagent(s)
+**CRITICAL: Pass explicit paths to every subagent.**
 
-**For sequential task:**
-
-````
-Task tool (general-purpose):
+````claude
+Task tool:
   model: [selected-model]
   prompt: |
-    You are implementing Task $TASK_NUMBER of $TOTAL from plan: $PLAN_FILE
+    Implement Task [N] of [TOTAL].
 
-    ## Your Task
-    $TASK_DESCRIPTION
+    ## EXPLICIT PATHS (use these exactly)
 
-    ## Instructions
-    1. Read the plan file for full context
-    2. Follow the TDD cycle in your task exactly (write failing test first)
-    3. Run tests, verify they pass
-    4. Commit with conventional format:
+    WORKTREE_PATH: [WORKTREE from state]
+    STATE_FILE: [STATE_FILE]
+    PLAN_FILE: [PLAN from state]
+
+    ## FIRST ACTIONS
+
+    1. Change directory:
+       ```bash
+       cd "[WORKTREE_PATH]"
+       pwd
        ```
-       feat(scope): description of change
-       ```
-       or fix(), test(), docs() as appropriate
 
-    ## Constraints
-    - Follow TDD steps in plan: test FIRST, then implement
-    - Only implement this task
-    - Do not modify files outside task scope
+    2. Read your task from plan:
+       ```bash
+       awk '/^### Task [N]:/,/^### Task [N+1]:|^## /' "[PLAN_FILE]"
+       ```
+
+    ## IMPLEMENT
+
+    1. Follow TDD: write failing test first
+    2. Run tests, verify pass
+    3. Commit: `git add -A && git commit -m "feat(scope): description"`
+
+    ## CONSTRAINTS
+
+    - Only implement Task [N]
     - Tests must pass before commit
+    - Do not modify STATE_FILE (orchestrator does that)
 ````
 
-**For parallel batch:**
+### 3d. Verify Commit
 
-Dispatch multiple Task tools simultaneously for independent tasks.
-
-### 3d. Verify Completion
-
-After subagent returns, verify new commit exists:
+After subagent returns:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-LAST_COMMIT="$(frontmatter_get "$STATE_FILE" "last_commit" "")"
-CURRENT_HEAD="$(git rev-parse HEAD)"
+cd "$WORKTREE"
+
+LAST_COMMIT=$(frontmatter_get "$STATE_FILE" "last_commit" "")
+CURRENT_HEAD=$(git rev-parse HEAD)
 
 if [[ "$LAST_COMMIT" != "$CURRENT_HEAD" ]]; then
-  echo "COMMITTED"
+  echo "COMMITTED:$CURRENT_HEAD"
 else
   echo "NO_COMMIT"
 fi
 ```
 
-If NO_COMMIT:
+**If NO_COMMIT:** Dispatch fix subagent with error context. Do not attempt manual fix (context pollution).
 
-> Subagent did not commit. Dispatching fix subagent.
-
-Dispatch fix subagent with error context and instruction to debug systematically.
-
-If COMMITTED:
-
-Update state file:
+**If COMMITTED:** Update state:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-NEXT_TASK=$((CURRENT + 1))
-frontmatter_set "$STATE_FILE" "current_task" "$NEXT_TASK"
+CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+NEXT=$((CURRENT + 1))
+frontmatter_set "$STATE_FILE" "current_task" "$NEXT"
 frontmatter_set "$STATE_FILE" "last_commit" "$(git rev-parse HEAD)"
+echo "UPDATED:task $NEXT"
 ```
 
 Mark task `completed` in TodoWrite.
 
 ### 3e. Continue
 
-Return to 3a for next batch.
+Return to 3a.
 
 ## Step 4: Final Code Review
 
-After all tasks complete:
-
-Mark "Final Code Review" `in_progress` in TodoWrite.
-
-Read BASE_SHA from state file:
+Mark "Final Code Review" `in_progress`.
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-BASE_SHA="$(frontmatter_get "$STATE_FILE" "base_sha" "")"
-git diff "$BASE_SHA"..HEAD
+cd "$WORKTREE"
+BASE_SHA=$(frontmatter_get "$STATE_FILE" "base_sha" "")
+git diff "$BASE_SHA"..HEAD --stat
 ```
 
 Dispatch code-reviewer:
@@ -247,46 +211,50 @@ Dispatch code-reviewer:
 Task tool (dev-workflow:code-reviewer):
   model: sonnet
   prompt: |
-    Review all changes from implementation.
-    Plan: [plan file]
-    BASE_SHA: [from state]
-    Focus: Cross-cutting concerns, architecture consistency.
+    Review changes in worktree.
+
+    WORKTREE_PATH: [WORKTREE]
+    PLAN_FILE: [PLAN]
+    BASE_SHA: [BASE_SHA]
+
+    First: cd "[WORKTREE_PATH]"
+    Then: git diff [BASE_SHA]..HEAD
+
+    Focus: Cross-cutting concerns, consistency.
 ```
 
 Use `Skill("dev-workflow:receiving-code-review")` to process feedback.
 
 Fix Critical issues before proceeding.
 
-Mark "Final Code Review" `completed` in TodoWrite.
+Mark `completed`.
 
 ## Step 5: Finish
 
-Mark "Finish Branch" `in_progress` in TodoWrite.
+Mark "Finish Branch" `in_progress`.
 
 Use `Skill("dev-workflow:finishing-a-development-branch")`.
-
-Remove state file:
 
 ```bash
 rm -f "$STATE_FILE"
 ```
 
-Mark "Finish Branch" `completed` in TodoWrite.
+Mark `completed`.
 
 Report:
 
 ```text
-✓ Plan executed: [N] tasks
-✓ Tests: passing
-✓ Code reviewed: [issues found/fixed]
-✓ Branch: [merged/PR/kept]
+✓ Plan executed: [TOTAL] tasks
+✓ Worktree: [WORKTREE]
+✓ Code reviewed
+✓ Branch finished
 
 Workflow complete.
 ```
 
 ## Resume Flow
 
-When state file exists:
+When state file exists with CURRENT > 0:
 
 **1. Read state:**
 
@@ -295,31 +263,33 @@ source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 PLAN="$(frontmatter_get "$STATE_FILE" "plan" "")"
 CURRENT="$(frontmatter_get "$STATE_FILE" "current_task" "0")"
 TOTAL="$(frontmatter_get "$STATE_FILE" "total_tasks" "0")"
+ENABLED="$(frontmatter_get "$STATE_FILE" "enabled" "true")"
 ```
 
-**2. Verify plan exists:**
+**2. Verify enabled:**
+
+If `enabled: false`, ask user if they want to continue.
+
+**3. Verify plan exists:**
 
 ```bash
 test -f "$PLAN" || echo "Plan file missing: $PLAN"
 ```
 
-**3. Rebuild TodoWrite** based on current_task position.
+**4. Rebuild TodoWrite** based on current_task position.
 
-**4. Continue from Step 3** (3a will find next task).
+**5. Continue from Step 3** (3a will find next task).
 
-## Recovery
-
-**View state:**
+## Error Recovery
 
 ```bash
+# View state
 cat "$STATE_FILE"
-```
 
-**Rollback:**
-
-```bash
+# Rollback
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-BASE_SHA="$(frontmatter_get "$STATE_FILE" "base_sha" "")"
+cd "$WORKTREE"
+BASE_SHA=$(frontmatter_get "$STATE_FILE" "base_sha" "")
 git reset --hard "$BASE_SHA"
 rm "$STATE_FILE"
 ```
@@ -332,10 +302,15 @@ rm "$STATE_FILE"
 - Proceed with Critical issues unfixed
 - Dispatch parallel subagents on overlapping files
 - Mark task complete without commit verification
-- Use task-indexed commit messages
+- Use task-indexed commit messages (use conventional commits)
+- Attempt manual fix when subagent fails (context pollution)
 
 **If subagent fails:**
 
-- Check git status for uncommitted changes
-- Dispatch fix subagent with error context
-- Do not attempt manual fix (context pollution)
+1. Check git status for uncommitted changes
+2. Dispatch fix subagent with error context
+3. If fix subagent fails twice, use Handle Blocker pattern
+
+## Key Principle
+
+**Every subagent receives explicit paths.** No path discovery via `git rev-parse`. The orchestrator knows all paths from state file and passes them in prompts.

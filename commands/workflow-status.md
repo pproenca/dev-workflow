@@ -18,7 +18,7 @@ Check for active workflows and display progress.
 
 ## Actions
 
-### If Active Workflow Found
+**If Active Workflow Found:**
 
 If state file exists, use AskUserQuestion:
 
