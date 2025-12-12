@@ -145,23 +145,42 @@ To remove if not needed:
 
 **You are already in a worktree (IS_MAIN_REPO was false).**
 
-Find state file:
+**FIRST:** Double-check we're not in main repo (safety validation):
 
 ```bash
-STATE_FILE="$(git rev-parse --show-toplevel)/.claude/dev-workflow-state.local.md"
+source "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh"
+if is_main_repo; then
+  echo "ERROR: In main repo. Go back to Worktree Setup section."
+  exit 1
+fi
+WORKTREE_PATH="$(get_repo_root)"
+STATE_FILE="${WORKTREE_PATH}/.claude/dev-workflow-state.local.md"
+echo "WORKTREE_PATH:$WORKTREE_PATH"
 echo "STATE_FILE:$STATE_FILE"
 test -f "$STATE_FILE" && echo "FOUND" || echo "NOT_FOUND"
 ```
 
-**If NOT_FOUND:** Create state (direct execution without worktree setup):
+**If ERROR about main repo:** You're in the wrong place. Return to **Worktree Setup** section above.
+
+**If NOT_FOUND:** State file should exist in any worktree created by the workflow. This indicates one of:
+
+1. **Wrong directory** - Verify you're in the correct worktree (check `is_main_repo` returned false above)
+2. **Manual worktree** - If this is a manually created worktree without state, create it:
 
 ```bash
-WORKTREE_PATH="$(git rev-parse --show-toplevel)"
+source "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh"
+# Safety: refuse to create state in main repo
+if is_main_repo; then
+  echo "ERROR: Cannot create state in main repo. Use Worktree Setup section."
+  exit 1
+fi
 PLAN_ABS="$(realpath "$ARGUMENTS")"
+WORKTREE_PATH="$(get_repo_root)"
 TOTAL_TASKS=$(grep -c "^### Task [0-9]\+:" "$PLAN_ABS")
 BASE_SHA=$(git rev-parse HEAD)
+STATE_FILE="${WORKTREE_PATH}/.claude/dev-workflow-state.local.md"
 
-mkdir -p "$(dirname "$STATE_FILE")"
+mkdir -p "${WORKTREE_PATH}/.claude"
 cat > "$STATE_FILE" << EOF
 ---
 workflow: execute-plan
@@ -174,6 +193,7 @@ last_commit: $BASE_SHA
 enabled: true
 ---
 EOF
+echo "STATE_FILE:$STATE_FILE"
 ```
 
 **Read state:**
