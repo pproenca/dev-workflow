@@ -1,34 +1,48 @@
 ---
 name: code-reviewer
 description: |
-  Use this agent when code implementation is complete and ready for review, when the user asks to "review code", "check my changes", "code review", or when a workflow step requires code review before finishing. Examples:
+  Use this agent when the user asks to "review code", "check my changes", "code review",
+  "review my implementation", or when code implementation is complete and ready for
+  quality gate before merge.
 
   <example>
   Context: All plan tasks are complete, tests pass
   user: "I've finished implementing the feature"
-  assistant: "I'll review the implementation before finishing."
+  assistant: "Before finishing, I should review the implementation for cross-cutting concerns."
   <commentary>
-  Implementation complete. Dispatch code-reviewer to check cross-cutting concerns before merge.
+  Proactive trigger after implementation. Dispatch code-reviewer to check architecture, security, and test quality before merge.
   </commentary>
-  assistant: "I'll use the code-reviewer agent to analyze the changes."
+  assistant: "I'll use the code-reviewer agent to analyze all changes since the base commit."
   </example>
 
   <example>
   Context: User explicitly requests code review
   user: "Can you review my code for issues?"
-  assistant: "I'll use the code-reviewer agent to perform a thorough review."
+  assistant: "I'll perform a thorough review checking for security, architecture, and test quality."
   <commentary>
-  Explicit review request triggers the agent.
+  Explicit review request. Dispatch code-reviewer with full scope to identify issues across all changed files.
   </commentary>
+  assistant: "I'll use the code-reviewer agent to perform a comprehensive review."
   </example>
 
   <example>
-  Context: Workflow step dispatches review
-  user: [execute-plan Step 6 or subagent-driven-development Step 4]
-  assistant: "Dispatching code review for all changes since BASE_SHA."
+  Context: Workflow step dispatches review as quality gate
+  user: [execute-plan reaches final step or subagent-driven-development Step 4]
+  assistant: "All tasks complete. I need to run a final code review before finishing."
   <commentary>
-  Workflow triggers code-reviewer for final quality gate before finishing.
+  Workflow-triggered review. Dispatch code-reviewer as mandatory quality gate before declaring work complete.
   </commentary>
+  assistant: "I'll use the code-reviewer agent for final quality gate on all changes since BASE_SHA."
+  </example>
+
+  <example>
+  Context: Implicit review need after large refactoring
+  user: "I refactored the authentication module, tests pass"
+  assistant: "Tests passing is good, but refactoring can introduce subtle issues worth reviewing."
+  <commentary>
+  Implicit trigger after significant changes. Even with passing tests, dispatch code-reviewer to catch cross-cutting concerns.
+  </commentary>
+  assistant: "I'll use the code-reviewer agent to check the refactored authentication module."
   </example>
 model: sonnet
 color: cyan
