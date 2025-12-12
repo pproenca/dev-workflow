@@ -93,7 +93,7 @@ For detailed guidance:
 - **`references/phase-details.md`** - Expanded phase procedures
 - **`references/rationalizations.md`** - Common excuses and rebuttals
 
-### Integration
+## Integration
 
 - **root-cause-tracing** - REQUIRED for deep call stack errors (Phase 1)
 - **test-driven-development** - REQUIRED for failing test case (Phase 4)

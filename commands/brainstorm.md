@@ -109,3 +109,17 @@ AskUserQuestion:
 - **One question at a time** - Don't overwhelm
 - **YAGNI** - Remove unnecessary features from designs
 - **Incremental validation** - Check each section before continuing
+- **Simplest solution first** - Prefer boring over clever
+
+## Design Quality Gates
+
+Before saving, verify the design does NOT include:
+
+| Red Flag | Action |
+|----------|--------|
+| "For future extensibility" | Remove - solve today's problem |
+| Abstract classes with 1 implementation | Simplify to concrete |
+| Plugin/hook systems without plugins | Remove until needed |
+| More than 3 new files per feature | Consolidate |
+
+These will be enforced by code-architect during planning, but catching early saves iteration.
