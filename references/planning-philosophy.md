@@ -2,7 +2,7 @@
 
 <!--
 PURPOSE: Core philosophy for write-plan command and subagent execution.
-LOADED BY: commands/write-plan.md, skills/subagent-driven-development
+LOADED BY: commands/write-plan.md, skills/dev-workflow:subagent-driven-development
 -->
 
 ## The Golden Rule
@@ -40,7 +40,7 @@ Each task = one TDD cycle (10-30 minutes):
 
 ## File Organization Rules
 
-**Apply pragmatic-architecture principles:**
+**Apply dev-workflow:pragmatic-architecture principles:**
 
 | Rule | Guidance |
 |------|----------|

@@ -12,7 +12,7 @@ Write the test first. Watch it fail. Write minimal code to pass.
 
 ## The Iron Law
 
-```
+```text
 NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
 ```
 

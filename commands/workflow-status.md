@@ -22,7 +22,7 @@ Check for active workflows and display progress.
 
 If state file exists, use AskUserQuestion:
 
-```
+```claude
 AskUserQuestion:
   header: "Actions"
   question: "What would you like to do?"
@@ -54,7 +54,7 @@ echo "WORKFLOW:$WORKFLOW PLAN:$PLAN"
 
 Confirm with AskUserQuestion:
 
-```
+```claude
 AskUserQuestion:
   header: "Confirm"
   question: "Delete workflow state? This cannot be undone."

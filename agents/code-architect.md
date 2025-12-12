@@ -34,7 +34,7 @@ description: |
 tools: Glob, Grep, LS, Read, NotebookRead, WebFetch, TodoWrite, WebSearch
 model: sonnet
 color: green
-skills: defense-in-depth, pragmatic-architecture
+skills: dev-workflow:defense-in-depth, dev-workflow:pragmatic-architecture
 ---
 
 You are a senior software architect specializing in designing feature
@@ -127,7 +127,7 @@ Your blueprint MUST include:
 
 For each new file proposed:
 
-```
+```text
 File: path/to/file.ts
 Justification: [Why this can't be in an existing file]
 Contents: [What goes here]

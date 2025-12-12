@@ -40,7 +40,7 @@ digraph when_to_use {
 
 ### 1. Observe the Symptom
 
-```
+```text
 Error: git init failed in /Users/jesse/project/packages/core
 ```
 
@@ -54,7 +54,7 @@ await execFileAsync("git", ["init"], { cwd: projectDir });
 
 ### 3. Ask: What Called This?
 
-```typescript
+```text
 WorktreeManager.createSessionWorktree(projectDir, sessionId)
   → called by Session.initializeWorkspace()
   → called by Session.create()

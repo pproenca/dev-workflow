@@ -243,7 +243,7 @@ git diff "$BASE_SHA"..HEAD
 
 Dispatch code-reviewer:
 
-```
+```claude
 Task tool (dev-workflow:code-reviewer):
   model: sonnet
   prompt: |
@@ -275,7 +275,7 @@ Mark "Finish Branch" `completed` in TodoWrite.
 
 Report:
 
-```
+```text
 ✓ Plan executed: [N] tasks
 ✓ Tests: passing
 ✓ Code reviewed: [issues found/fixed]

@@ -117,7 +117,7 @@ Push back when:
 
 **How to push back:**
 
-```
+```text
 Issue: "[reviewer's concern]"
 Response: Not implementing. [Technical reasoning with code references]
 ```
@@ -142,7 +142,7 @@ Verify before implementing.
 
 ## Acknowledging Correct Feedback
 
-```
+```text
 ✅ "Fixed. [Brief description]"
 ✅ [Just fix it silently]
 ❌ "You're absolutely right!"
@@ -155,7 +155,7 @@ Actions speak. The code shows the feedback was heard.
 
 After processing all feedback, report:
 
-```
+```text
 Review processed:
 - Critical: [N] found, [M] fixed
 - Important: [N] found, [M] fixed

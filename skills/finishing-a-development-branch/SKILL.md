@@ -39,7 +39,7 @@ If unknown, ask user which branch.
 
 Use AskUserQuestion:
 
-```
+```claude
 AskUserQuestion:
   header: "Integration"
   question: "Work complete. How to proceed?"
@@ -113,7 +113,7 @@ Report branch and worktree location. Skip Step 5. Return.
 
 Confirm with AskUserQuestion first:
 
-```
+```claude
 AskUserQuestion:
   header: "Confirm"
   question: "Discard all work on this branch?"
@@ -162,7 +162,7 @@ rm -f "$HANDOFF_FILE"
 
 Report:
 
-```
+```text
 Branch finished:
 - Action: [Merged / PR created / Discarded]
 - Branch: [name]
