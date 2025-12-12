@@ -1,7 +1,7 @@
 {
   "name": "dev-workflow",
   "description": "Development workflow with TDD, debugging, and collaboration skills",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "author": {
     "name": "Pedro Proenca",
     "url": "https://github.com/pproenca"
