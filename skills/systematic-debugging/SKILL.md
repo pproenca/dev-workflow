@@ -12,7 +12,7 @@ Random fixes waste time and create new bugs.
 
 ## The Iron Law
 
-```
+```text
 NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST
 ```
 

@@ -28,7 +28,7 @@ For parallel executions of the same plan, each must be in a separate worktree. W
 
 **If feature description provided:** Confirm understanding using AskUserQuestion:
 
-```
+```claude
 AskUserQuestion:
   header: "Scope"
   question: "Building [restatement]. Correct?"
@@ -46,7 +46,7 @@ AskUserQuestion:
 
 Dispatch code-explorer using Task tool:
 
-```
+```claude
 Task tool (dev-workflow:code-explorer):
   prompt: |
     Survey codebase for [feature]:
@@ -81,7 +81,7 @@ Present using AskUserQuestion (one question at a time, 2-4 options each).
 
 Dispatch code-architect using Task tool:
 
-```
+```claude
 Task tool (dev-workflow:code-architect):
   prompt: |
     Design architecture for [feature] using exploration context.
@@ -98,7 +98,7 @@ Task tool (dev-workflow:code-architect):
 
 After return, use AskUserQuestion:
 
-```
+```claude
 AskUserQuestion:
   header: "Approach"
   question: "Which approach?"
@@ -188,7 +188,7 @@ Mark "Save Plan" `completed` in TodoWrite.
 
 Use AskUserQuestion:
 
-```
+```claude
 AskUserQuestion:
   header: "Execute"
   question: "Plan saved to [path]. How to proceed?"

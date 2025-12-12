@@ -20,7 +20,7 @@ Tests run on commit via pre-commit hook.
 ## Architecture
 
 **Plugin flow:**
-```
+```text
 /dev-workflow:brainstorm → /dev-workflow:write-plan → execute
                                                        ├─ "Execute now" → subagent-driven-development
                                                        └─ "Batch execution" → /dev-workflow:execute-plan
@@ -79,7 +79,7 @@ Skills with checklists require TodoWrite tracking.
 
 ## Directory Structure
 
-```
+```text
 hooks/           # Event handlers (SessionStart, Stop, SubagentStop)
 scripts/         # Validation, setup, helpers
 skills/          # SKILL.md per skill with optional references/

@@ -10,7 +10,7 @@ allowed-tools: Read, Bash, Grep, Glob
 
 ## The Rule
 
-```
+```text
 NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
 ```
 
@@ -43,7 +43,7 @@ Stop when catching these thoughts:
 
 ## Examples
 
-```
+```text
 ✅ [Run npm test] [See: 34/34 pass] "All tests pass"
 ❌ "Should pass now"
 

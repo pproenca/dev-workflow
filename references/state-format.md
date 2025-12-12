@@ -42,7 +42,7 @@ Brief context line (optional)
 
 Commands read state using `@` file reference:
 
-```markdown
+```text
 Current state: @.claude/dev-workflow-state.local.md
 ```
 
@@ -202,7 +202,7 @@ mode: pending | sequential | subagent
 |------|-------------|
 | `pending` | Worktree created, awaiting execution choice |
 | `sequential` | Execute via `/dev-workflow:execute-plan` with checkpoints |
-| `subagent` | Execute via `subagent-driven-development` skill |
+| `subagent` | Execute via `dev-workflow:subagent-driven-development` skill |
 
 ### Creating Handoff State
 

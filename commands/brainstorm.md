@@ -37,7 +37,7 @@ Ask questions **one at a time** using AskUserQuestion:
 
 Use structured options (2-4 per question):
 
-```
+```claude
 AskUserQuestion:
   header: "Scope"
   question: "What is the primary goal?"
@@ -57,7 +57,7 @@ Propose 2-3 approaches with trade-offs.
 
 Use AskUserQuestion to present options:
 
-```
+```claude
 AskUserQuestion:
   header: "Approach"
   question: "Which direction?"
@@ -90,7 +90,7 @@ Commit: `git add -A && git commit -m "docs: <topic> design"`
 
 Use AskUserQuestion:
 
-```
+```claude
 AskUserQuestion:
   header: "Next"
   question: "Design saved. What next?"

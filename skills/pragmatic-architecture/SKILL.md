@@ -68,9 +68,9 @@ Signs of wrong abstraction:
 
 Before creating abstraction, ask:
 
-```
+```text
 1. Does this exist 3+ times? → No? Don't abstract
-2. Are the use cases truly identical? → No? Don't abstract  
+2. Are the use cases truly identical? → No? Don't abstract
 3. Would someone unfamiliar understand this? → No? Simpler design
 4. Am I solving today's problem? → No? YAGNI
 ```

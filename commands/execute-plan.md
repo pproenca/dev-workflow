@@ -57,7 +57,7 @@ echo "✓ Created: $WORKTREE_PATH"
 
 Use AskUserQuestion:
 
-```
+```claude
 AskUserQuestion:
   header: "Continue"
   question: "Worktree created. How should execution proceed?"
@@ -156,7 +156,7 @@ Use TodoWrite to create items for: all plan tasks + "Final Code Review" + "Finis
 
 Use AskUserQuestion:
 
-```
+```claude
 AskUserQuestion:
   header: "Mode"
   question: "How should tasks be executed?"
@@ -259,7 +259,7 @@ After every 3 tasks:
 
 Use AskUserQuestion:
 
-```
+```claude
 AskUserQuestion:
   header: "Checkpoint"
   question: "Batch complete. $COMPLETED/$TOTAL tasks done. Continue?"
@@ -281,7 +281,7 @@ If implementation hits a blocker:
 
 Use AskUserQuestion:
 
-```
+```claude
 AskUserQuestion:
   header: "Blocker"
   question: "Task $N: [type] - [description]"
@@ -311,7 +311,7 @@ git diff "$BASE_SHA"..HEAD
 
 Dispatch code-reviewer:
 
-```
+```claude
 Task tool (dev-workflow:code-reviewer):
   model: sonnet
   prompt: |

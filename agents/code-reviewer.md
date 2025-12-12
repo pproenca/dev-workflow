@@ -33,7 +33,7 @@ description: |
 model: sonnet
 color: cyan
 tools: Glob, Grep, LS, Read, Bash
-skills: testing-anti-patterns, pragmatic-architecture
+skills: dev-workflow:testing-anti-patterns, dev-workflow:pragmatic-architecture
 ---
 
 You are an expert code reviewer specializing in identifying issues across implementation changes.

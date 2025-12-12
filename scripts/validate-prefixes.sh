@@ -78,7 +78,36 @@ if [[ $ERRORS -eq 0 ]]; then
   echo "[OK] All Task tool references use prefix"
 fi
 
-# 5. Extract command names and check for unprefixed references
+# 5. Check for unprefixed skills in agent frontmatter
+echo
+echo "--- Checking agent skills frontmatter ---"
+SKILL_ERRORS=0
+for agent_file in "$PLUGIN_ROOT"/agents/*.md; do
+  [[ -f "$agent_file" ]] || continue
+  agent_name=$(basename "$agent_file" .md)
+
+  # Extract skills: line from frontmatter
+  skills_line=$(grep "^skills:" "$agent_file" 2>/dev/null | head -1 | sed 's/skills:[[:space:]]*//' || true)
+  [[ -z "$skills_line" ]] && continue
+
+  # Check each skill in the comma-separated list
+  IFS=',' read -ra skill_list <<< "$skills_line"
+  for skill in "${skill_list[@]}"; do
+    skill=$(echo "$skill" | xargs)  # trim whitespace
+    [[ -z "$skill" ]] && continue
+    if [[ ! "$skill" =~ ^${PLUGIN_NAME}: ]]; then
+      echo "[ERROR] $agent_name: skill '$skill' missing prefix (should be ${PLUGIN_NAME}:$skill)"
+      ((SKILL_ERRORS++))
+    fi
+  done
+done
+ERRORS=$((ERRORS + SKILL_ERRORS))
+
+if [[ $SKILL_ERRORS -eq 0 ]]; then
+  echo "[OK] All agent skills use prefix"
+fi
+
+# 6. Extract command names and check for unprefixed references
 echo
 echo "--- Commands ---"
 COMMANDS=()
@@ -123,7 +152,35 @@ if [[ $CMD_ERRORS -eq 0 ]]; then
   echo "[OK] All slash command references use prefix"
 fi
 
-# 6. Summary
+# 8. Check for unprefixed skill names in documentation
+echo
+echo "--- Checking skill references in documentation ---"
+DOC_ERRORS=0
+for skill in "${SKILLS[@]}"; do
+  # Search for skill name in references/ that isn't prefixed
+  while IFS= read -r line; do
+    file=$(echo "$line" | cut -d: -f1)
+    # Skip skill's own definition file
+    if [[ "$file" == *"skills/${skill}/SKILL.md"* ]]; then
+      continue
+    fi
+    # Skip if this occurrence is already prefixed
+    if echo "$line" | grep -q "${PLUGIN_NAME}:${skill}"; then
+      continue
+    fi
+    linenum=$(echo "$line" | cut -d: -f2)
+    echo "[ERROR] $file:$linenum: '$skill' (should be ${PLUGIN_NAME}:$skill)"
+    ((DOC_ERRORS++))
+  done < <(grep -rn -E "(^|[^:a-z-])${skill}([^a-z-]|$)" "$PLUGIN_ROOT/references" --include="*.md" 2>/dev/null || true)
+done
+
+ERRORS=$((ERRORS + DOC_ERRORS))
+
+if [[ $DOC_ERRORS -eq 0 ]]; then
+  echo "[OK] All documentation skill references use prefix"
+fi
+
+# 9. Summary
 echo
 echo "=== Result: $([ $ERRORS -eq 0 ] && echo "PASS" || echo "FAIL ($ERRORS errors)") ==="
 exit $ERRORS
