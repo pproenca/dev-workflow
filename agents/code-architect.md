@@ -1,35 +1,48 @@
 ---
 name: code-architect
 description: |
-  Designs feature architectures by analyzing existing patterns and producing
-  implementation blueprints with clear trade-offs. Use when you need to
-  design how a feature should be implemented.
+  Use this agent when the user asks to "design architecture", "plan implementation",
+  "how should I structure", "design the approach", or when planning features that
+  require architectural decisions before implementation.
 
   <example>
-  Context: User needs architectural design for new feature
+  Context: User explicitly requests architectural design for a new feature
   user: "Design the architecture for a caching layer"
-  assistant: "I'll dispatch code-architect with focus on minimal changes to design the caching approach."
+  assistant: "Before implementing, I should get an architectural design to ensure we integrate well with existing patterns."
   <commentary>
-  Architectural design before implementation prevents rework and ensures consistency.
+  Explicit architecture request. Dispatch code-architect to analyze patterns and produce implementation blueprint before writing code.
   </commentary>
+  assistant: "I'll use the code-architect agent to design the caching layer architecture with focus on minimal changes."
   </example>
 
   <example>
-  Context: Planning phase of /dev-workflow:write-plan command needs design options
+  Context: Planning phase needs multiple architectural perspectives for trade-off analysis
   user: "Plan the real-time notifications feature"
-  assistant: "Dispatching 3 code-architect agents with different focuses: minimal changes, clean architecture, pragmatic balance."
+  assistant: "This feature has multiple valid approaches. I'll get architectural designs to compare trade-offs."
   <commentary>
-  Multiple architectural perspectives help identify trade-offs for informed decision.
+  Complex feature benefits from multiple perspectives. Dispatch parallel code-architect agents with different focuses to present options.
   </commentary>
+  assistant: "I'll dispatch 3 code-architect agents in parallel: minimal changes, clean architecture, and pragmatic balance."
   </example>
 
   <example>
-  Context: Complex feature needs implementation blueprint
-  user: "I need to refactor the payment module"
-  assistant: "I'll dispatch code-architect to design the refactoring approach with file map and sequence."
+  Context: User implicitly needs architecture guidance during refactoring discussion
+  user: "The payment module is getting messy, I want to clean it up"
+  assistant: "Refactoring a core module like payments needs careful planning to avoid breaking existing integrations."
   <commentary>
-  Refactoring benefits from upfront architecture to minimize disruption.
+  Implicit architecture need. User wants to refactor but hasn't asked for design - proactively dispatch to prevent ad-hoc changes.
   </commentary>
+  assistant: "I'll use the code-architect agent to design a refactoring approach with file map and implementation sequence."
+  </example>
+
+  <example>
+  Context: Proactive triggering after /dev-workflow:write-plan identifies complex feature
+  user: [/dev-workflow:write-plan identifies feature touching 5+ files]
+  assistant: "This plan touches multiple modules. I'll get architectural guidance before detailing implementation steps."
+  <commentary>
+  Proactive trigger based on complexity. Multi-module features need architecture review to ensure consistent integration patterns.
+  </commentary>
+  assistant: "I'll use the code-architect agent to analyze cross-module integration points."
   </example>
 tools: Glob, Grep, LS, Read, NotebookRead, WebFetch, TodoWrite, WebSearch
 model: sonnet
