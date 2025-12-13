@@ -121,7 +121,7 @@ Save to: `docs/plans/YYYY-MM-DD-<feature-name>.md`
 
 > **For Claude:** `/dev-workflow:execute-plan` for batch checkpoints, or `Skill("dev-workflow:subagent-driven-development")` for autonomous execution.
 >
-> **Methodology:** All tasks use `test-driven-development` skill (RED → GREEN → REFACTOR).
+> **Methodology:** All tasks use `dev-workflow:test-driven-development` skill (RED → GREEN → REFACTOR).
 
 **Goal:** [One sentence]
 
@@ -175,7 +175,7 @@ Each task: one logical unit (10-30 minutes), TDD cycle included.
 - Complete code (not "add validation")
 - Exact commands with expected output
 - TDD: test → fail → implement → pass → commit
-- Each task references `test-driven-development` skill
+- Each task references `dev-workflow:test-driven-development` skill
 
 Mark "Save Plan" `completed` in TodoWrite.
 

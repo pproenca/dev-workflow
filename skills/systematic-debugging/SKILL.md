@@ -48,7 +48,7 @@ For multi-component systems, add diagnostic instrumentation at each boundary bef
 
 ### Phase 4: Implementation
 
-1. **Create failing test case** - Use **test-driven-development** skill
+1. **Create failing test case** - Use **dev-workflow:test-driven-development** skill
 2. **Implement single fix** - ONE change, no bundled improvements
 3. **Verify fix** - Test passes, no regressions
 4. **If 3+ fixes failed** - Question architecture, not symptoms
@@ -95,7 +95,7 @@ For detailed guidance:
 
 ## Integration
 
-- **root-cause-tracing** - REQUIRED for deep call stack errors (Phase 1)
-- **test-driven-development** - REQUIRED for failing test case (Phase 4)
-- **defense-in-depth** - Add validation layers after fix
-- **verification-before-completion** - Verify fix before claiming success
+- **dev-workflow:root-cause-tracing** - REQUIRED for deep call stack errors (Phase 1)
+- **dev-workflow:test-driven-development** - REQUIRED for failing test case (Phase 4)
+- **dev-workflow:defense-in-depth** - Add validation layers after fix
+- **dev-workflow:verification-before-completion** - Verify fix before claiming success

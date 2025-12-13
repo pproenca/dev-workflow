@@ -121,7 +121,7 @@ When error is deep in call stack, use **root-cause-tracing** skill:
 - Automated test if possible
 - One-off test script if no framework
 - MUST have before fixing
-- Use **test-driven-development** skill
+- Use **dev-workflow:test-driven-development** skill
 
 ### Implementing Single Fix
 

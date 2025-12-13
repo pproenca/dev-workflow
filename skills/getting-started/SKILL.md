@@ -55,7 +55,7 @@ Before using a skill, announce it:
 Examples:
 
 - "I'm using the brainstorming skill to refine your idea into a design."
-- "I'm using the test-driven-development skill to implement this feature."
+- "I'm using the dev-workflow:test-driven-development skill to implement this feature."
 
 ## Skill Types
 
