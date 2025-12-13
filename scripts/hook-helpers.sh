@@ -79,11 +79,22 @@ frontmatter_set() {
     return 1
   fi
 
+  # #region agent log
+  echo "{\"id\":\"log_$(date +%s)_frontmatter1\",\"timestamp\":$(date +%s)000,\"location\":\"hook-helpers.sh:82\",\"message\":\"frontmatter_set entry\",\"data\":{\"key\":\"$key\",\"value_length\":${#value},\"value_contains_pipe\":\"$(echo \"$value\" | grep -q '|' && echo 'true' || echo 'false')\",\"value_preview\":\"$(echo \"$value\" | head -c 50)\"},\"sessionId\":\"debug-session\",\"runId\":\"post-fix\",\"hypothesisId\":\"B\"}" >> /Users/pedroproenca/Documents/Projects/dev-workflow/.cursor/debug.log 2>/dev/null || true
+  # #endregion
   # Escape special characters for sed replacement
+  # Must escape | since we use it as sed delimiter
   local escaped_value="${value//\\/\\\\}"
+  escaped_value="${escaped_value//|/\\|}"
   escaped_value="${escaped_value//&/\\&}"
-
+  # #region agent log
+  echo "{\"id\":\"log_$(date +%s)_frontmatter2\",\"timestamp\":$(date +%s)000,\"location\":\"hook-helpers.sh:86\",\"message\":\"After escaping - before sed\",\"data\":{\"escaped_contains_pipe\":\"$(echo \"$escaped_value\" | grep -q '|' && echo 'true' || echo 'false')\",\"escaped_length\":${#escaped_value}},\"sessionId\":\"debug-session\",\"runId\":\"post-fix\",\"hypothesisId\":\"B\"}" >> /Users/pedroproenca/Documents/Projects/dev-workflow/.cursor/debug.log 2>/dev/null || true
+  # #endregion
   # Use | delimiter to avoid conflicts with / in paths
   sed "s|^${key}: .*|${key}: ${escaped_value}|" "$file" > "$temp"
+  # #region agent log
+  local sed_exit_code=$?
+  echo "{\"id\":\"log_$(date +%s)_frontmatter3\",\"timestamp\":$(date +%s)000,\"location\":\"hook-helpers.sh:87\",\"message\":\"sed command completed\",\"data\":{\"sed_exit_code\":$sed_exit_code,\"temp_file_exists\":\"$([ -f \"$temp\" ] && echo 'true' || echo 'false')\"},\"sessionId\":\"debug-session\",\"runId\":\"post-fix\",\"hypothesisId\":\"B\"}" >> /Users/pedroproenca/Documents/Projects/dev-workflow/.cursor/debug.log 2>/dev/null || true
+  # #endregion
   mv "$temp" "$file"
 }

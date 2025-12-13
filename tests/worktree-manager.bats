@@ -385,3 +385,75 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" == *"ERROR: No tasks found"* ]]
 }
+
+@test "setup_worktree_with_state - base_sha captured from main repo before worktree creation" {
+  # Source hook-helpers for frontmatter_get
+  source "$PLUGIN_ROOT/scripts/hook-helpers.sh"
+
+  # Create a plan file with tasks
+  cat > "$TEST_DIR/test-plan.md" << 'EOF'
+# Test Plan
+
+### Task 1: First task
+Do something
+EOF
+
+  # Capture main repo HEAD before creating worktree
+  main_repo_head=$(git rev-parse HEAD)
+
+  # Run the function
+  worktree_path="$(setup_worktree_with_state "$TEST_DIR/test-plan.md" "execute-plan" 2>/dev/null)"
+  state_file="${worktree_path}/.claude/dev-workflow-state.local.md"
+
+  # Verify base_sha matches main repo HEAD (not worktree HEAD)
+  base_sha_from_state=$(frontmatter_get "$state_file" "base_sha" "")
+  [ "$base_sha_from_state" = "$main_repo_head" ]
+
+  # Verify worktree HEAD is the same (worktree created from HEAD)
+  worktree_head=$(cd "$worktree_path" && git rev-parse HEAD)
+  [ "$worktree_head" = "$main_repo_head" ]
+}
+
+@test "setup_worktree_with_state - base_sha correct when called from worktree" {
+  # Source hook-helpers for frontmatter_get
+  source "$PLUGIN_ROOT/scripts/hook-helpers.sh"
+
+  # Create first worktree
+  cat > "$TEST_DIR/plan1.md" << 'EOF'
+# Plan 1
+
+### Task 1: First task
+Do something
+EOF
+
+  worktree1_path="$(setup_worktree_with_state "$TEST_DIR/plan1.md" "execute-plan" 2>/dev/null)"
+  main_repo_head=$(git rev-parse HEAD)
+
+  # Make a commit in the first worktree
+  cd "$worktree1_path"
+  echo "change" >> file.txt
+  git add file.txt
+  git commit -m "Commit in worktree1"
+  worktree1_head=$(git rev-parse HEAD)
+
+  # Create second worktree from within first worktree
+  cat > "$TEST_DIR/plan2.md" << 'EOF'
+# Plan 2
+
+### Task 1: Second task
+Do something else
+EOF
+
+  worktree2_path="$(setup_worktree_with_state "$TEST_DIR/plan2.md" "execute-plan" 2>/dev/null)"
+  state_file2="${worktree2_path}/.claude/dev-workflow-state.local.md"
+
+  # base_sha should be from main repo, not from worktree1
+  base_sha_from_state=$(frontmatter_get "$state_file2" "base_sha" "")
+  [ "$base_sha_from_state" = "$main_repo_head" ]
+  [ "$base_sha_from_state" != "$worktree1_head" ]
+
+  # Cleanup
+  cd "$TEST_DIR"
+  remove_worktree "$worktree1_path" > /dev/null 2>&1 || true
+  remove_worktree "$worktree2_path" > /dev/null 2>&1 || true
+}

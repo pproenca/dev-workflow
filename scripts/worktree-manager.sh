@@ -171,9 +171,26 @@ setup_worktree_with_state() {
     return 1
   fi
 
+  # Capture base_sha BEFORE creating worktree to ensure we get main repo HEAD
+  # If called from a worktree, get main repo HEAD explicitly
+  local repo_root main_repo_path
+  repo_root="$(get_repo_root)"
+  if is_main_repo; then
+    base_sha=$(git rev-parse HEAD)
+  else
+    # Called from a worktree - get main repo HEAD
+    main_repo_path="$(get_main_worktree)"
+    base_sha=$(cd "$main_repo_path" && git rev-parse HEAD)
+  fi
+  # #region agent log
+  echo "{\"id\":\"log_$(date +%s)_setup1\",\"timestamp\":$(date +%s)000,\"location\":\"worktree-manager.sh:174\",\"message\":\"Before worktree creation - base_sha captured\",\"data\":{\"pwd\":\"$(pwd)\",\"git_toplevel\":\"$(git rev-parse --show-toplevel 2>/dev/null || echo 'NONE')\",\"base_sha\":\"$base_sha\",\"is_main_repo\":\"$(is_main_repo && echo 'true' || echo 'false')\",\"main_repo_path\":\"${main_repo_path:-NONE}\"},\"sessionId\":\"debug-session\",\"runId\":\"post-fix\",\"hypothesisId\":\"A\"}" >> /Users/pedroproenca/Documents/Projects/dev-workflow/.cursor/debug.log 2>/dev/null || true
+  # #endregion
+  
   worktree_name="$(generate_worktree_name "$plan_file")"
   worktree_path="$(create_worktree "$worktree_name")"
-  base_sha=$(git rev-parse HEAD)
+  # #region agent log
+  echo "{\"id\":\"log_$(date +%s)_setup2\",\"timestamp\":$(date +%s)000,\"location\":\"worktree-manager.sh:178\",\"message\":\"After worktree creation\",\"data\":{\"worktree_path\":\"$worktree_path\",\"base_sha\":\"$base_sha\"},\"sessionId\":\"debug-session\",\"runId\":\"post-fix\",\"hypothesisId\":\"A\"}" >> /Users/pedroproenca/Documents/Projects/dev-workflow/.cursor/debug.log 2>/dev/null || true
+  # #endregion
   state_file="${worktree_path}/.claude/dev-workflow-state.local.md"
 
   mkdir -p "${worktree_path}/.claude"

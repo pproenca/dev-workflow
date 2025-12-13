@@ -273,6 +273,20 @@ EOF
   [[ "$result" == "C:\Users\test" ]]
 }
 
+@test "frontmatter_set: value with pipe character - regression test for bug fix" {
+  cat > "$TEST_DIR/test.md" << 'EOF'
+---
+path: placeholder
+status: active
+---
+Content here
+EOF
+  # Pipe character was breaking sed because | is used as delimiter
+  frontmatter_set "$TEST_DIR/test.md" "path" "path/to/file|with|pipes"
+  result=$(frontmatter_get "$TEST_DIR/test.md" "path")
+  [[ "$result" == "path/to/file|with|pipes" ]]
+}
+
 @test "frontmatter_set: nested directory path" {
   cat > "$TEST_DIR/test.md" << 'EOF'
 ---
