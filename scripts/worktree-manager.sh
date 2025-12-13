@@ -15,8 +15,8 @@ get_main_worktree() {
 # Check if in main repo (not a worktree)
 is_main_repo() {
   local current main
-  current="$(cd "$(pwd)" && pwd -P)"
-  main="$(cd "$(get_main_worktree)" && pwd -P)"
+  current="$(command cd "$(pwd)" && pwd -P)"
+  main="$(command cd "$(get_main_worktree)" && pwd -P)"
   [[ "$current" == "$main" ]]
 }
 
