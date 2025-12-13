@@ -13,6 +13,7 @@ base_sha: abc123def
 current_task: 3
 total_tasks: 5
 last_commit: def456abc
+batch_size: 5
 enabled: true
 ---
 
@@ -21,16 +22,18 @@ Brief context line (optional)
 
 ## Fields
 
-| Field          | Required | Description                               |
-| -------------- | -------- | ----------------------------------------- |
-| `workflow`     | Yes      | `execute-plan` or `subagent`              |
-| `worktree`     | Yes      | Absolute path to worktree directory       |
-| `plan`         | Yes      | Absolute path to plan file                |
-| `base_sha`     | Yes      | Commit before workflow started            |
-| `current_task` | Yes      | Task number in progress (0 = not started) |
-| `total_tasks`  | Yes      | Total task count from plan                |
-| `last_commit`  | Yes      | HEAD after last completed task            |
-| `enabled`      | Yes      | `true` to continue, `false` to pause      |
+| Field          | Required | Description                                        |
+| -------------- | -------- | -------------------------------------------------- |
+| `workflow`     | Yes      | `execute-plan` or `subagent`                       |
+| `worktree`     | Yes      | Absolute path to worktree directory                |
+| `plan`         | Yes      | Absolute path to plan file                         |
+| `base_sha`     | Yes      | Commit before workflow started                     |
+| `current_task` | Yes      | Task number in progress (0 = not started)          |
+| `total_tasks`  | Yes      | Total task count from plan                         |
+| `last_commit`  | Yes      | HEAD after last completed task                     |
+| `batch_size`   | No       | Tasks per orchestrator batch (default: 5)          |
+| `batch_end`    | No       | Task number to stop at for current batch           |
+| `enabled`      | Yes      | `true` to continue, `false` to pause               |
 
 ## Why Explicit Worktree Path
 
@@ -90,6 +93,7 @@ base_sha: $(git rev-parse HEAD)
 current_task: 0
 total_tasks: $TOTAL_TASKS
 last_commit: $(git rev-parse HEAD)
+batch_size: 5
 enabled: true
 ---
 EOF
@@ -188,6 +192,7 @@ base_sha: [git merge-base HEAD main]
 current_task: 3
 total_tasks: 5
 last_commit: [git rev-parse HEAD]
+batch_size: 5
 enabled: true
 ---
 

@@ -85,20 +85,41 @@ AskUserQuestion:
 
 **If "Subagents" selected:**
 
-Update workflow type in state:
+Update workflow type and batch size in state:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 frontmatter_set "$STATE_FILE" "workflow" "subagent"
+frontmatter_set "$STATE_FILE" "batch_size" "5"
 ```
 
-Dispatch Task subagent with explicit paths:
+### Batch Execution Loop
+
+Execute tasks in batches with fresh orchestrators to prevent memory exhaustion.
+
+**Check remaining tasks:**
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
+BATCH_SIZE=$(frontmatter_get "$STATE_FILE" "batch_size" "5")
+BATCH_END=$((CURRENT + BATCH_SIZE))
+[[ $BATCH_END -gt $TOTAL ]] && BATCH_END=$TOTAL
+# Store batch_end in state file for skill to read
+frontmatter_set "$STATE_FILE" "batch_end" "$BATCH_END"
+echo "BATCH:tasks $((CURRENT+1)) to $BATCH_END of $TOTAL"
+```
+
+**While CURRENT < TOTAL:**
+
+Dispatch bounded batch orchestrator:
 
 ```claude
 Task tool:
   model: opus
   prompt: |
-    Execute plan using subagent-driven development.
+    Execute BATCH of tasks (not full plan).
 
     ## EXPLICIT PATHS (use these, do not discover)
 
@@ -106,16 +127,28 @@ Task tool:
     STATE_FILE: [STATE_FILE]
     PLAN_FILE: [PLAN_ABS]
 
-    ## FIRST ACTIONS
+    ## INSTRUCTIONS
 
     1. cd "[WORKTREE_PATH]"
     2. cat "[STATE_FILE]"
     3. Skill("dev-workflow:subagent-driven-development")
 
-    Execute until complete.
+    Execute tasks until batch_end (stored in state file).
+    Do NOT proceed to Final Code Review (caller handles that).
 ```
 
-Report and **STOP**.
+After batch returns, check progress:
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
+echo "PROGRESS:$CURRENT/$TOTAL"
+```
+
+**If CURRENT < TOTAL:** Loop back to "Check remaining tasks" (spawns fresh orchestrator).
+
+**If CURRENT >= TOTAL:** Proceed to **Step 6: Final Code Review**.
 
 **If "New terminal" selected:**
 
@@ -190,6 +223,7 @@ base_sha: $BASE_SHA
 current_task: 0
 total_tasks: $TOTAL_TASKS
 last_commit: $BASE_SHA
+batch_size: 5
 enabled: true
 ---
 EOF
@@ -242,9 +276,67 @@ AskUserQuestion:
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 frontmatter_set "$STATE_FILE" "workflow" "subagent"
+frontmatter_set "$STATE_FILE" "batch_size" "5"
 ```
 
-Use `Skill("dev-workflow:subagent-driven-development")` - it will read paths from state.
+### Batch Execution Loop (in worktree)
+
+Execute tasks in batches with fresh orchestrators to prevent memory exhaustion.
+
+**Check remaining tasks:**
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
+BATCH_SIZE=$(frontmatter_get "$STATE_FILE" "batch_size" "5")
+BATCH_END=$((CURRENT + BATCH_SIZE))
+[[ $BATCH_END -gt $TOTAL ]] && BATCH_END=$TOTAL
+WORKTREE=$(frontmatter_get "$STATE_FILE" "worktree" "")
+PLAN=$(frontmatter_get "$STATE_FILE" "plan" "")
+# Store batch_end in state file for skill to read
+frontmatter_set "$STATE_FILE" "batch_end" "$BATCH_END"
+echo "BATCH:tasks $((CURRENT+1)) to $BATCH_END of $TOTAL"
+```
+
+**While CURRENT < TOTAL:**
+
+Dispatch bounded batch orchestrator:
+
+```claude
+Task tool:
+  model: opus
+  prompt: |
+    Execute BATCH of tasks (not full plan).
+
+    ## EXPLICIT PATHS
+
+    WORKTREE_PATH: [WORKTREE]
+    STATE_FILE: [STATE_FILE]
+    PLAN_FILE: [PLAN]
+
+    ## INSTRUCTIONS
+
+    1. cd "[WORKTREE_PATH]"
+    2. cat "[STATE_FILE]"
+    3. Skill("dev-workflow:subagent-driven-development")
+
+    Execute tasks until batch_end (stored in state file).
+    Do NOT proceed to Final Code Review (caller handles that).
+```
+
+After batch returns, check progress:
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
+echo "PROGRESS:$CURRENT/$TOTAL"
+```
+
+**If CURRENT < TOTAL:** Loop back to "Check remaining tasks" (spawns fresh orchestrator).
+
+**If CURRENT >= TOTAL:** Proceed to **Step 6: Final Code Review**.
 
 **If This session:** Continue to Step 3.
 

@@ -291,3 +291,60 @@ teardown() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"Usage:"* ]]
 }
+
+# =============================================================================
+# State File Functions (2 tests)
+# =============================================================================
+
+@test "setup_worktree_with_state - creates state file with all fields" {
+  # Create a simple plan file with tasks
+  cat > "$TEST_DIR/test-plan.md" << 'EOF'
+# Test Plan
+
+### Task 1: First task
+Do something
+
+### Task 2: Second task
+Do something else
+EOF
+
+  # Run the function
+  worktree_path="$(setup_worktree_with_state "$TEST_DIR/test-plan.md" "execute-plan" 2>/dev/null)"
+
+  # Verify worktree exists
+  [ -d "$worktree_path" ]
+
+  # Verify state file exists
+  state_file="${worktree_path}/.claude/dev-workflow-state.local.md"
+  [ -f "$state_file" ]
+
+  # Verify all required fields
+  run grep "^workflow: execute-plan$" "$state_file"
+  [ "$status" -eq 0 ]
+  run grep "^worktree: $worktree_path\$" "$state_file"
+  [ "$status" -eq 0 ]
+  run grep "^current_task: 0$" "$state_file"
+  [ "$status" -eq 0 ]
+  run grep "^total_tasks: 2$" "$state_file"
+  [ "$status" -eq 0 ]
+  run grep "^enabled: true$" "$state_file"
+  [ "$status" -eq 0 ]
+}
+
+@test "setup_worktree_with_state - includes batch_size field" {
+  # Create a simple plan file
+  cat > "$TEST_DIR/test-plan.md" << 'EOF'
+# Test Plan
+
+### Task 1: First task
+Do something
+EOF
+
+  # Run the function
+  worktree_path="$(setup_worktree_with_state "$TEST_DIR/test-plan.md" "subagent" 2>/dev/null)"
+  state_file="${worktree_path}/.claude/dev-workflow-state.local.md"
+
+  # Verify batch_size field exists with default value
+  run grep "^batch_size: 5$" "$state_file"
+  [ "$status" -eq 0 ]
+}

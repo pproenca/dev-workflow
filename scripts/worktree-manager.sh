@@ -176,6 +176,7 @@ base_sha: ${base_sha}
 current_task: 0
 total_tasks: ${total_tasks}
 last_commit: ${base_sha}
+batch_size: 5
 enabled: true
 ---
 

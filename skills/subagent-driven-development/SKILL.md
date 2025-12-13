@@ -35,7 +35,9 @@ Before this skill loads, you should have received:
 - `STATE_FILE` - absolute path to state file
 - `PLAN_FILE` - absolute path to plan (also in state file)
 
-**If you don't have these paths:** Stop and report error. The caller must provide explicit paths.
+**If you don't have WORKTREE_PATH, STATE_FILE, or PLAN_FILE:** Stop and report error. The caller must provide explicit paths.
+
+**Batch mode:** If state file contains `batch_end` field, this is a batched execution. Stop after reaching batch_end and do NOT proceed to Final Code Review (caller handles that after all batches complete).
 
 **Model requirement:** Orchestration requires opus-level reasoning. If session uses sonnet/haiku, consider using `/dev-workflow:execute-plan` instead for sequential execution.
 
@@ -102,10 +104,14 @@ Build dependency model:
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
 TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
-echo "PROGRESS:$CURRENT/$TOTAL"
+# Read batch_end from state file, default to TOTAL if not set (unbatched mode)
+BATCH_END=$(frontmatter_get "$STATE_FILE" "batch_end" "$TOTAL")
+echo "PROGRESS:$CURRENT/$BATCH_END (total: $TOTAL)"
 ```
 
-If CURRENT >= TOTAL: Go to Step 4.
+**If CURRENT >= BATCH_END:**
+- If BATCH_END < TOTAL: Report "Batch complete ($CURRENT tasks done)" and **STOP** (caller spawns next batch)
+- If BATCH_END == TOTAL: Go to Step 4 (Final Code Review)
 
 ### 3b. Select Model
 
@@ -196,6 +202,8 @@ Return to 3a.
 
 ## Step 4: Final Code Review
 
+**Skip if batch mode:** Check state file - if `batch_end` exists and is less than `total_tasks`, report "Batch complete" and **STOP**. Caller handles Final Code Review after all batches.
+
 Mark "Final Code Review" `in_progress`.
 
 ```bash
@@ -230,6 +238,8 @@ Fix Critical issues before proceeding.
 Mark `completed`.
 
 ## Step 5: Finish
+
+**Skip if batch mode:** Caller handles Finish after all batches.
 
 Mark "Finish Branch" `in_progress`.
 
