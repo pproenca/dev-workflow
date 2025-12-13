@@ -177,11 +177,32 @@ for TASK_NUM in "${TASK_NUMS[@]}"; do
 done
 ```
 
-### 3d. Dispatch Group in Parallel
+### 3c-bis. Create Ephemeral Worktrees for Group
+
+**CRITICAL: Create ephemeral worktrees BEFORE dispatching subagents for git thread-safety.**
+
+Each task in the group gets its own isolated worktree to avoid git race conditions.
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh"
+cd "$WORKTREE_PATH"
+
+# Create ephemeral worktree for each task
+IFS=',' read -ra TASK_NUMS <<< "$CURRENT_GROUP"
+
+for TASK_NUM in "${TASK_NUMS[@]}"; do
+  EPHEMERAL_PATH=$(create_ephemeral_worktree "$CURRENT_GROUP_NUM" "$TASK_NUM")
+  echo "EPHEMERAL_TASK_${TASK_NUM}:${EPHEMERAL_PATH}"
+done
+```
+
+Store these ephemeral paths for use in dispatch prompts. Each subagent works in its own worktree.
+
+### 3d. Dispatch Group in Parallel (with Ephemeral Worktrees)
 
 **CRITICAL: Dispatch ALL tasks in the group in a SINGLE message with multiple Task tool calls.**
 
-For each task in the group, dispatch a subagent:
+For each task in the group, dispatch a subagent with its ephemeral worktree path:
 
 ````claude
 Task tool:
@@ -189,20 +210,23 @@ Task tool:
   prompt: |
     Implement Task [TASK_NUM] of [TOTAL].
 
-    ## WORKTREE
+    ## EPHEMERAL WORKTREE (work here - git isolated)
+    [EPHEMERAL_PATH from 3c-bis output]
+
+    ## MAIN WORKTREE (for output file)
     [WORKTREE_PATH]
 
     ## OUTPUT FILE
-    Write your completion report to: .claude/task-outputs/task-[TASK_NUM].md
+    Write your completion report to: [WORKTREE_PATH]/.claude/task-outputs/task-[TASK_NUM].md
 
     ## YOUR TASK
     [TASK_SECTION content]
 
     ## INSTRUCTIONS
-    1. cd "[WORKTREE_PATH]"
+    1. cd "[EPHEMERAL_PATH]"
     2. Follow TDD: write failing test, implement, verify pass
     3. Commit: git add -A && git commit -m "feat(scope): description"
-    4. Write output report to OUTPUT FILE with this EXACT format:
+    4. Write output report to OUTPUT FILE (in MAIN WORKTREE) with this EXACT format:
 
        If successful:
        ```
@@ -225,10 +249,12 @@ Task tool:
        ```
 
     ## CONSTRAINTS
+    - Work ONLY in EPHEMERAL WORKTREE (git isolated)
+    - Write output file to MAIN WORKTREE
     - Only implement this task
     - Tests must pass before commit
     - Do NOT use TodoWrite (orchestrator handles)
-    - Write output to filesystem, return only: "TASK [N] COMPLETE: [commit_sha]" or "TASK [N] FAILED: [reason]"
+    - Return only: "TASK [N] COMPLETE: [commit_sha]" or "TASK [N] FAILED: [reason]"
 
     ## EFFORT BUDGET
     Simple task: 3-10 tool calls
@@ -240,11 +266,11 @@ Task tool:
 
 ```
 Send SINGLE message with THREE Task tool calls:
-- Task tool for Task 1 (sonnet)
-- Task tool for Task 2 (sonnet)
-- Task tool for Task 3 (sonnet)
+- Task tool for Task 1 (sonnet) → EPHEMERAL_TASK_1 path
+- Task tool for Task 2 (sonnet) → EPHEMERAL_TASK_2 path
+- Task tool for Task 3 (sonnet) → EPHEMERAL_TASK_3 path
 
-All three execute concurrently. Wait for all to complete.
+All three execute concurrently in isolated worktrees. Wait for all to complete.
 ```
 
 ### 3e. Process Group Results
@@ -284,6 +310,29 @@ echo "GROUP_RESULTS: $COMPLETED completed, $FAILED failed"
 ```
 
 **If any task failed:** Handle with retry logic (see Error Recovery section).
+
+### 3e-bis. Merge Ephemeral Branches
+
+**After processing results, merge all ephemeral branches back to main worktree:**
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh"
+cd "$WORKTREE_PATH"
+
+# Merge ephemeral branches in task order (--no-ff preserves branch history)
+if ! merge_ephemeral_group "$WORKTREE_PATH" "$CURRENT_GROUP_NUM" "$CURRENT_GROUP"; then
+  log_progress "ERROR" "Merge conflict in group $CURRENT_GROUP_NUM"
+  # Escalate to user - merge conflicts indicate dependency analysis missed file overlap
+  AskUserQuestion: "Merge conflict in group $CURRENT_GROUP_NUM. Manual resolution needed."
+fi
+
+# Cleanup ephemeral worktrees and branches
+cleanup_ephemeral_group "$CURRENT_GROUP_NUM" "$CURRENT_GROUP"
+
+log_progress "GROUP_MERGE" "Merged ${COMPLETED} tasks from group $CURRENT_GROUP_NUM"
+```
+
+**If merge fails:** The dependency analysis missed a file overlap. Escalate to user.
 
 **If all succeeded:** Update state and TodoWrite:
 
@@ -446,6 +495,12 @@ AskUserQuestion:
 ### Resume from Checkpoint
 
 When resuming (CURRENT > 0):
+
+0. **Cleanup stale ephemeral worktrees** (from interrupted session):
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-manager.sh"
+cleanup_all_ephemeral_worktrees
+```
 
 1. Read progress log: `get_recent_progress 10`
 2. Read last phase summary: `get_last_phase_summary`

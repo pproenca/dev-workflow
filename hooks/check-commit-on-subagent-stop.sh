@@ -2,11 +2,19 @@
 # SubagentStop hook - blocks if no commit was made during task execution
 # Ensures task subagents commit their work before stopping
 # Exempts read-only agents (code-reviewer, code-explorer, code-architect) during review/finish phases
+# Exempts ephemeral worktrees (commit verification done at merge time)
 
 set -euo pipefail
 
 # Source frontmatter helpers
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+
+# Fast exit for ephemeral worktrees (commit verification deferred to merge time)
+# Ephemeral worktrees are used for parallel subagent execution with git isolation
+if is_ephemeral_worktree; then
+  echo '{"decision": "approve"}'
+  exit 0
+fi
 
 # Fast exit if no state file (not in a workflow)
 STATE_FILE="$(get_state_file)"

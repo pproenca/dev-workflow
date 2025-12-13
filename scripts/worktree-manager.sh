@@ -256,6 +256,145 @@ activate_worktree() {
   fi
 }
 
+# =============================================================================
+# Ephemeral Worktree Functions (for parallel subagent execution)
+# =============================================================================
+
+# Create ephemeral worktree for a single task in a parallel group
+# Usage: create_ephemeral_worktree <group_num> <task_num>
+# Returns: ephemeral worktree path
+# Note: Creates worktree under main repo's .worktrees/.ephemeral/
+#       but branches from current HEAD (typically execution worktree's HEAD)
+create_ephemeral_worktree() {
+  local group_num="$1"
+  local task_num="$2"
+  local main_repo ephemeral_dir worktree_path branch_name current_head
+
+  current_head="$(git rev-parse HEAD)"
+  main_repo="$(get_main_worktree)"
+  ephemeral_dir="${main_repo}/.worktrees/.ephemeral"
+  worktree_path="${ephemeral_dir}/group-${group_num}-task-${task_num}"
+  branch_name="ephemeral/group-${group_num}-task-${task_num}"
+
+  mkdir -p "$ephemeral_dir"
+
+  # Clean up stale worktree/branch if exists (from crashed previous run)
+  if [[ -d "$worktree_path" ]]; then
+    git worktree remove "$worktree_path" --force 2>/dev/null || rm -rf "$worktree_path"
+    git worktree prune
+  fi
+  if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+    git branch -D "$branch_name" 2>/dev/null || true
+  fi
+
+  git worktree add "$worktree_path" -b "$branch_name" "$current_head" >&2
+
+  echo "$worktree_path"
+}
+
+# Merge all ephemeral worktrees for a group back to execution worktree
+# Usage: merge_ephemeral_group <execution_worktree> <group_num> <task_list>
+# task_list: comma-separated task numbers (e.g., "1,2,3")
+# Returns: 0 on success, 1 on merge conflict
+# Note: Merges in task-number order using --no-ff
+merge_ephemeral_group() {
+  local execution_worktree="$1"
+  local group_num="$2"
+  local task_list="$3"
+  local main_repo ephemeral_dir
+
+  main_repo="$(get_main_worktree)"
+  ephemeral_dir="${main_repo}/.worktrees/.ephemeral"
+
+  # Change to execution worktree for merging
+  cd "$execution_worktree" || return 1
+
+  # Parse task numbers and merge in order
+  IFS=',' read -ra tasks <<< "$task_list"
+  for task_num in "${tasks[@]}"; do
+    local branch_name="ephemeral/group-${group_num}-task-${task_num}"
+
+    # Check if ephemeral branch exists
+    if ! git show-ref --verify --quiet "refs/heads/$branch_name"; then
+      echo "WARN: Branch $branch_name does not exist, skipping" >&2
+      continue
+    fi
+
+    # Check if ephemeral branch has commits beyond merge-base
+    local base_sha ephemeral_head
+    base_sha=$(git merge-base HEAD "$branch_name" 2>/dev/null) || continue
+    ephemeral_head=$(git rev-parse "$branch_name" 2>/dev/null) || continue
+
+    if [[ "$base_sha" == "$ephemeral_head" ]]; then
+      echo "WARN: Task $task_num has no commits, skipping" >&2
+      continue
+    fi
+
+    # Merge with --no-ff --no-edit
+    if ! git merge --no-ff --no-edit -m "merge: task $task_num from ephemeral worktree" "$branch_name"; then
+      echo "ERROR: Merge conflict on task $task_num" >&2
+      git merge --abort
+      return 1
+    fi
+  done
+
+  return 0
+}
+
+# Cleanup ephemeral worktrees and branches for a specific group
+# Usage: cleanup_ephemeral_group <group_num> <task_list>
+cleanup_ephemeral_group() {
+  local group_num="$1"
+  local task_list="$2"
+  local main_repo ephemeral_dir
+
+  main_repo="$(get_main_worktree)"
+  ephemeral_dir="${main_repo}/.worktrees/.ephemeral"
+
+  IFS=',' read -ra tasks <<< "$task_list"
+  for task_num in "${tasks[@]}"; do
+    local worktree_path="${ephemeral_dir}/group-${group_num}-task-${task_num}"
+    local branch_name="ephemeral/group-${group_num}-task-${task_num}"
+
+    # Remove worktree
+    git worktree remove "$worktree_path" --force 2>/dev/null || rm -rf "$worktree_path"
+
+    # Remove branch
+    git branch -D "$branch_name" 2>/dev/null || true
+  done
+
+  # Prune orphaned worktree entries
+  git worktree prune
+
+  # Remove .ephemeral directory if empty
+  rmdir "$ephemeral_dir" 2>/dev/null || true
+}
+
+# Cleanup ALL ephemeral worktrees (recovery function for aborted workflows)
+# Usage: cleanup_all_ephemeral_worktrees
+cleanup_all_ephemeral_worktrees() {
+  local main_repo ephemeral_dir
+
+  main_repo="$(get_main_worktree)"
+  ephemeral_dir="${main_repo}/.worktrees/.ephemeral"
+
+  [[ -d "$ephemeral_dir" ]] || return 0
+
+  # Remove all ephemeral worktrees
+  for wt in "$ephemeral_dir"/group-*-task-*/; do
+    [[ -d "$wt" ]] || continue
+    git worktree remove "$wt" --force 2>/dev/null || rm -rf "$wt"
+  done
+
+  # Remove all ephemeral branches
+  git branch --list "ephemeral/*" | while read -r branch; do
+    git branch -D "${branch#  }" 2>/dev/null || true
+  done
+
+  git worktree prune
+  rm -rf "$ephemeral_dir" 2>/dev/null || true
+}
+
 # Main entry point
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   case "${1:-help}" in
@@ -270,6 +409,11 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     pending) get_pending_worktree ;;
     activate) activate_worktree "$2" ;;
     set-mode) set_handoff_mode "$2" "$3" ;;
+    # Ephemeral worktree commands (for parallel subagent execution)
+    create-ephemeral) create_ephemeral_worktree "$2" "$3" ;;
+    merge-ephemeral) merge_ephemeral_group "$2" "$3" "$4" ;;
+    cleanup-ephemeral) cleanup_ephemeral_group "$2" "$3" ;;
+    cleanup-all-ephemeral) cleanup_all_ephemeral_worktrees ;;
     *)
       echo "Usage: $0 {create|remove|list|is-main|setup-state|cleanup|...} [args]"
       echo ""
@@ -284,6 +428,12 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
       echo "  pending                          Get most recent pending worktree"
       echo "  activate <mode>                  Set mode and return pending worktree path"
       echo "  set-mode <wt_path> <mode>        Update handoff mode"
+      echo ""
+      echo "Ephemeral (parallel subagent) commands:"
+      echo "  create-ephemeral <group> <task>  Create ephemeral worktree for task"
+      echo "  merge-ephemeral <wt> <grp> <lst> Merge ephemeral branches to worktree"
+      echo "  cleanup-ephemeral <group> <list> Cleanup ephemeral worktrees for group"
+      echo "  cleanup-all-ephemeral            Cleanup ALL ephemeral worktrees"
       ;;
   esac
 fi

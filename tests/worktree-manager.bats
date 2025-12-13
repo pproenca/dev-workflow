@@ -457,3 +457,133 @@ EOF
   remove_worktree "$worktree1_path" > /dev/null 2>&1 || true
   remove_worktree "$worktree2_path" > /dev/null 2>&1 || true
 }
+
+# =============================================================================
+# Ephemeral Worktree Functions (8 tests)
+# =============================================================================
+
+@test "create_ephemeral_worktree - creates at .worktrees/.ephemeral/" {
+  run create_ephemeral_worktree 1 2
+  [ "$status" -eq 0 ]
+  [ -d "$TEST_DIR/.worktrees/.ephemeral/group-1-task-2" ]
+  [[ "$output" == *"/.worktrees/.ephemeral/group-1-task-2" ]]
+}
+
+@test "create_ephemeral_worktree - creates ephemeral branch" {
+  create_ephemeral_worktree 1 3 2>/dev/null
+  run git branch --list "ephemeral/group-1-task-3"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ephemeral/group-1-task-3"* ]]
+}
+
+@test "create_ephemeral_worktree - branches from current HEAD" {
+  # Record current HEAD before creating ephemeral worktree
+  current_head=$(git rev-parse HEAD)
+
+  # Create ephemeral worktree
+  eph_path=$(create_ephemeral_worktree 1 1 2>/dev/null)
+
+  # Verify ephemeral worktree is at the same commit
+  eph_head=$(cd "$eph_path" && git rev-parse HEAD)
+  [ "$eph_head" = "$current_head" ]
+}
+
+@test "create_ephemeral_worktree - cleans up stale worktree" {
+  # Create an ephemeral worktree
+  create_ephemeral_worktree 1 1 2>/dev/null
+
+  # Create it again (should clean up and recreate)
+  run create_ephemeral_worktree 1 1
+  [ "$status" -eq 0 ]
+  [ -d "$TEST_DIR/.worktrees/.ephemeral/group-1-task-1" ]
+}
+
+@test "merge_ephemeral_group - merges multiple tasks" {
+  # Create ephemeral worktrees
+  eph1="$(create_ephemeral_worktree 1 1 2>/dev/null)"
+  eph2="$(create_ephemeral_worktree 1 2 2>/dev/null)"
+
+  # Make commits in each ephemeral worktree
+  cd "$eph1"
+  echo "task1 content" > task1.txt
+  git add task1.txt
+  git commit -m "task 1 implementation"
+
+  cd "$eph2"
+  echo "task2 content" > task2.txt
+  git add task2.txt
+  git commit -m "task 2 implementation"
+
+  # Merge back to main repo
+  cd "$TEST_DIR"
+  run merge_ephemeral_group "$TEST_DIR" 1 "1,2"
+  [ "$status" -eq 0 ]
+
+  # Verify both files exist in main repo after merge
+  [ -f "$TEST_DIR/task1.txt" ]
+  [ -f "$TEST_DIR/task2.txt" ]
+}
+
+@test "merge_ephemeral_group - skips tasks with no commits" {
+  # Create ephemeral worktrees
+  eph1="$(create_ephemeral_worktree 1 1 2>/dev/null)"
+  eph2="$(create_ephemeral_worktree 1 2 2>/dev/null)"
+
+  # Only make commit in first worktree
+  cd "$eph1"
+  echo "task1 content" > task1.txt
+  git add task1.txt
+  git commit -m "task 1 implementation"
+
+  # Second worktree has no commits (simulating failed subagent)
+
+  # Merge back to main repo - should succeed with warning
+  cd "$TEST_DIR"
+  run merge_ephemeral_group "$TEST_DIR" 1 "1,2"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARN: Task 2 has no commits"* ]]
+
+  # Verify task1 file exists
+  [ -f "$TEST_DIR/task1.txt" ]
+}
+
+@test "cleanup_ephemeral_group - removes worktrees and branches" {
+  # Create ephemeral worktrees
+  create_ephemeral_worktree 2 1 2>/dev/null
+  create_ephemeral_worktree 2 2 2>/dev/null
+
+  [ -d "$TEST_DIR/.worktrees/.ephemeral/group-2-task-1" ]
+  [ -d "$TEST_DIR/.worktrees/.ephemeral/group-2-task-2" ]
+
+  # Cleanup
+  cleanup_ephemeral_group 2 "1,2"
+
+  # Verify worktrees removed
+  [ ! -d "$TEST_DIR/.worktrees/.ephemeral/group-2-task-1" ]
+  [ ! -d "$TEST_DIR/.worktrees/.ephemeral/group-2-task-2" ]
+
+  # Verify branches removed
+  run git branch --list "ephemeral/group-2-task-*"
+  [ -z "$output" ]
+}
+
+@test "cleanup_all_ephemeral_worktrees - cleans up everything" {
+  # Create multiple ephemeral worktrees across different groups
+  create_ephemeral_worktree 1 1 2>/dev/null
+  create_ephemeral_worktree 2 1 2>/dev/null
+  create_ephemeral_worktree 3 1 2>/dev/null
+
+  [ -d "$TEST_DIR/.worktrees/.ephemeral/group-1-task-1" ]
+  [ -d "$TEST_DIR/.worktrees/.ephemeral/group-2-task-1" ]
+  [ -d "$TEST_DIR/.worktrees/.ephemeral/group-3-task-1" ]
+
+  # Cleanup all
+  cleanup_all_ephemeral_worktrees
+
+  # Verify .ephemeral directory removed
+  [ ! -d "$TEST_DIR/.worktrees/.ephemeral" ]
+
+  # Verify all ephemeral branches removed
+  run git branch --list "ephemeral/*"
+  [ -z "$output" ]
+}

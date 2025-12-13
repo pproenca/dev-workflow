@@ -252,3 +252,43 @@ group_tasks_by_dependency() {
 
   echo "$groups"
 }
+
+# ============================================================================
+# Ephemeral Worktree Detection Functions
+# ============================================================================
+
+# Check if current directory is in an ephemeral worktree
+# Usage: is_ephemeral_worktree
+# Returns: 0 if in ephemeral worktree, 1 otherwise
+is_ephemeral_worktree() {
+  local current_path
+  current_path="$(pwd -P)"
+  [[ "$current_path" == *"/.worktrees/.ephemeral/"* ]]
+}
+
+# Get main repo path from ephemeral worktree path
+# Usage: get_main_from_ephemeral
+# Returns: main repo path (not execution worktree) or empty if not in ephemeral
+get_main_from_ephemeral() {
+  local current_path
+  current_path="$(pwd -P)"
+
+  if [[ "$current_path" == *"/.worktrees/.ephemeral/"* ]]; then
+    # Extract path before /.worktrees/.ephemeral/
+    echo "${current_path%%/.worktrees/.ephemeral/*}"
+  fi
+}
+
+# Get execution worktree path from ephemeral worktree
+# Usage: get_execution_worktree_from_ephemeral
+# Returns: first non-ephemeral worktree in .worktrees/ or empty
+# Note: This finds the "main" execution worktree (not ephemeral) for output files
+get_execution_worktree_from_ephemeral() {
+  local main_repo
+  main_repo="$(get_main_from_ephemeral)"
+
+  [[ -z "$main_repo" ]] && return
+
+  # Find the first non-ephemeral worktree (the execution worktree)
+  find "${main_repo}/.worktrees" -maxdepth 1 -type d -name "*-[0-9]*" ! -name ".ephemeral" 2>/dev/null | head -1
+}
