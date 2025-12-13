@@ -111,28 +111,23 @@ echo "BATCH:tasks $((CURRENT+1)) to $BATCH_END of $TOTAL"
 
 **While CURRENT < TOTAL:**
 
-Dispatch bounded batch orchestrator:
+Dispatch batch orchestrator (slim prompt - state file has all paths):
 
 ```claude
 Task tool:
   model: opus
   prompt: |
-    Execute BATCH of tasks (not full plan).
-
-    ## EXPLICIT PATHS (use these, do not discover)
+    Execute batch of tasks.
 
     WORKTREE_PATH: [WORKTREE_PATH]
     STATE_FILE: [STATE_FILE]
-    PLAN_FILE: [PLAN_ABS]
-
-    ## INSTRUCTIONS
 
     1. cd "[WORKTREE_PATH]"
-    2. cat "[STATE_FILE]"
-    3. Skill("dev-workflow:subagent-driven-development")
+    2. Skill("dev-workflow:subagent-driven-development")
 
-    Execute until batch boundary (calculated from batch_size in state).
-    Do NOT proceed to Final Code Review (caller handles that).
+    State file contains: plan path, current_task, batch_size, total.
+    Skill reads plan, extracts task sections, dispatches subagents.
+    Stop at batch boundary. Do NOT proceed to Final Code Review.
 ```
 
 After batch returns, check progress:
@@ -245,15 +240,25 @@ echo "ENABLED:$ENABLED"
 
 **If ENABLED is false:** Ask user if they want to continue.
 
-**If CURRENT > 0:** This is a resume - rebuild TodoWrite from current position.
-
-Extract task list for TodoWrite:
+**If CURRENT > 0:** This is a resume - REPLACE TodoWrite with current batch state.
 
 ```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+BATCH_SIZE=$(frontmatter_get "$STATE_FILE" "batch_size" "5")
+BATCH_END=$((CURRENT + BATCH_SIZE))
+[[ $BATCH_END -gt $TOTAL ]] && BATCH_END=$TOTAL
+IS_LAST_BATCH=$([[ $BATCH_END -ge $TOTAL ]] && echo "true" || echo "false")
+
+echo "RESUME: tasks $((CURRENT+1)) to $BATCH_END (last: $IS_LAST_BATCH)"
+
+# Get task titles
 grep -E "^### Task [0-9]+:" "$PLAN" | sed 's/^### Task \([0-9]*\): \(.*\)/Task \1: \2/'
 ```
 
-Use TodoWrite for: all tasks + "Final Code Review" + "Finish Branch".
+**Single TodoWrite call that REPLACES all items:**
+- Tasks 1 to CURRENT: `completed`
+- Tasks CURRENT+1 to BATCH_END: `pending` (this batch)
+- If IS_LAST_BATCH="true": Add "Final Code Review" + "Finish Branch"
 
 ## Step 2: Choose Mode
 
@@ -300,28 +305,23 @@ echo "PLAN_FILE:$PLAN_FILE"
 
 **While CURRENT < TOTAL:**
 
-Dispatch bounded batch orchestrator:
+Dispatch batch orchestrator (slim prompt - state file has all paths):
 
 ```claude
 Task tool:
   model: opus
   prompt: |
-    Execute BATCH of tasks (not full plan).
-
-    ## EXPLICIT PATHS (use these, do not discover)
+    Execute batch of tasks.
 
     WORKTREE_PATH: [WORKTREE_PATH]
     STATE_FILE: [STATE_FILE]
-    PLAN_FILE: [PLAN_FILE]
-
-    ## INSTRUCTIONS
 
     1. cd "[WORKTREE_PATH]"
-    2. cat "[STATE_FILE]"
-    3. Skill("dev-workflow:subagent-driven-development")
+    2. Skill("dev-workflow:subagent-driven-development")
 
-    Execute until batch boundary (calculated from batch_size in state).
-    Do NOT proceed to Final Code Review (caller handles that).
+    State file contains: plan path, current_task, batch_size, total.
+    Skill reads plan, extracts task sections, dispatches subagents.
+    Stop at batch boundary. Do NOT proceed to Final Code Review.
 ```
 
 After batch returns, check progress:

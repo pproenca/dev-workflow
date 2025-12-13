@@ -77,13 +77,39 @@ echo "PROGRESS:$CURRENT/$TOTAL"
 
 ## Step 1: Setup TodoWrite
 
-Extract tasks and create TodoWrite items:
+**REPLACE any existing todos with batch-scoped items.** This prevents accumulation across batches.
+
+Extract task titles and calculate batch boundaries:
 
 ```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+BATCH_SIZE=$(frontmatter_get "$STATE_FILE" "batch_size" "0")
+TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
+
+# Calculate batch end (0 = unbatched, use total)
+if [[ "$BATCH_SIZE" -gt 0 ]]; then
+  BATCH_END=$((CURRENT + BATCH_SIZE))
+  [[ $BATCH_END -gt $TOTAL ]] && BATCH_END=$TOTAL
+  IS_LAST_BATCH=$([[ $BATCH_END -ge $TOTAL ]] && echo "true" || echo "false")
+else
+  BATCH_END=$TOTAL
+  IS_LAST_BATCH="true"
+fi
+
+echo "BATCH: tasks $((CURRENT+1)) to $BATCH_END (total: $TOTAL, last: $IS_LAST_BATCH)"
+
+# Get task titles for TodoWrite
 grep -E "^### Task [0-9]+:" "$PLAN_FILE" | sed 's/^### Task \([0-9]*\): \(.*\)/Task \1: \2/'
 ```
 
-Use TodoWrite for: all tasks + "Final Code Review" + "Finish Branch".
+**Single TodoWrite call that REPLACES all items:**
+- Tasks 1 to CURRENT: mark as `completed` (already done)
+- Tasks CURRENT+1 to BATCH_END: mark as `pending` (this batch)
+- If IS_LAST_BATCH="true": Add "Final Code Review" + "Finish Branch" as `pending`
+- If IS_LAST_BATCH="false": Omit review/finish (caller handles after all batches)
+
+**Critical:** Subagents do NOT use TodoWrite. Only this orchestrator updates todo status.
 
 ## Step 2: Analyze Dependencies
 
@@ -134,47 +160,49 @@ echo "PROGRESS:$CURRENT/$BATCH_END (total: $TOTAL, batched: $IS_BATCHED)"
 | sonnet | Standard tasks (default)         |
 | opus   | Complex (5+ files, architecture) |
 
-### 3c. Dispatch Task Subagent
+### 3c. Extract Task Section & Dispatch
 
-**CRITICAL: Pass explicit paths to every subagent.**
+**Extract task section BEFORE dispatching.** Subagent receives inline content (~200-500 bytes) instead of reading full plan (~2KB+).
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+TASK_NUM=$((CURRENT + 1))
+NEXT_TASK=$((TASK_NUM + 1))
+
+# Extract just this task's section
+TASK_SECTION=$(awk "/^### Task ${TASK_NUM}:/,/^### Task ${NEXT_TASK}:|^## /" "$PLAN_FILE" | head -n -1)
+echo "TASK $TASK_NUM (${#TASK_SECTION} bytes):"
+echo "$TASK_SECTION"
+```
+
+Dispatch with inline task content:
 
 ````claude
 Task tool:
   model: [selected-model]
   prompt: |
-    Implement Task [N] of [TOTAL].
+    Implement Task [TASK_NUM] of [TOTAL].
 
-    ## EXPLICIT PATHS (use these exactly)
+    ## WORKTREE
+    [WORKTREE_PATH]
 
-    WORKTREE_PATH: [WORKTREE from state]
-    STATE_FILE: [STATE_FILE]
-    PLAN_FILE: [PLAN from state]
+    ## YOUR TASK
+    [TASK_SECTION content here]
 
-    ## FIRST ACTIONS
-
-    1. Change directory:
-       ```bash
-       cd "[WORKTREE_PATH]"
-       pwd
-       ```
-
-    2. Read your task from plan:
-       ```bash
-       awk '/^### Task [N]:/,/^### Task [N+1]:|^## /' "[PLAN_FILE]"
-       ```
-
-    ## IMPLEMENT
-
-    1. Follow TDD: write failing test first
-    2. Run tests, verify pass
-    3. Commit: `git add -A && git commit -m "feat(scope): description"`
+    ## INSTRUCTIONS
+    1. cd "[WORKTREE_PATH]"
+    2. Follow TDD: write failing test, implement, verify pass
+    3. Commit: git add -A && git commit -m "feat(scope): description"
 
     ## CONSTRAINTS
-
-    - Only implement Task [N]
+    - Only implement this task
     - Tests must pass before commit
-    - Do not modify STATE_FILE (orchestrator does that)
+    - Do NOT use TodoWrite (orchestrator handles progress)
+    - Do NOT modify state file
 ````
+
+**Note:** Subagent receives only what it needs. No plan file path, no state file path.
 
 ### 3d. Verify Commit
 
@@ -205,30 +233,32 @@ echo "=== Uncommitted Changes ==="
 git diff --stat 2>/dev/null || true
 ```
 
-Dispatch fix subagent (escalate to opus):
+Dispatch fix subagent (escalate to opus) with error context inline:
 
 ```claude
 Task tool:
   model: opus
   prompt: |
-    Task [N] failed to complete with commit.
+    Task [TASK_NUM] failed to commit. Fix and commit.
 
-    ## PATHS
-    WORKTREE_PATH: [WORKTREE]
-    STATE_FILE: [STATE_FILE]
-    PLAN_FILE: [PLAN]
+    ## WORKTREE
+    [WORKTREE_PATH]
+
+    ## ORIGINAL TASK
+    [TASK_SECTION from earlier extraction]
 
     ## ERROR CONTEXT
-    [paste git status and diff output]
+    [git status and diff output]
 
     ## INSTRUCTIONS
     1. cd "[WORKTREE_PATH]"
-    2. Diagnose the issue (test failures, incomplete implementation)
+    2. Diagnose: test failures? incomplete implementation?
     3. Fix the problem
-    4. Run tests: [test command]
+    4. Run tests, verify pass
     5. Commit: git add -A && git commit -m "fix: [description]"
 
     CONSTRAINT: You MUST commit before returning.
+    Do NOT use TodoWrite.
 ```
 
 If fix subagent also returns NO_COMMIT, use AskUserQuestion:
@@ -341,7 +371,10 @@ source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 PLAN_FILE="$(frontmatter_get "$STATE_FILE" "plan" "")"
 CURRENT="$(frontmatter_get "$STATE_FILE" "current_task" "0")"
 TOTAL="$(frontmatter_get "$STATE_FILE" "total_tasks" "0")"
+BATCH_SIZE="$(frontmatter_get "$STATE_FILE" "batch_size" "0")"
 ENABLED="$(frontmatter_get "$STATE_FILE" "enabled" "true")"
+
+echo "RESUME: task $((CURRENT+1)) of $TOTAL (batch_size: $BATCH_SIZE)"
 ```
 
 **2. Verify enabled:**
@@ -354,7 +387,10 @@ If `enabled: false`, ask user if they want to continue.
 test -f "$PLAN_FILE" || echo "Plan file missing: $PLAN_FILE"
 ```
 
-**4. Rebuild TodoWrite** based on current_task position.
+**4. REPLACE TodoWrite** with current batch state (same as Step 1):
+- Tasks 1 to CURRENT: `completed`
+- Tasks CURRENT+1 to BATCH_END: `pending`
+- Include review/finish only if last batch
 
 **5. Continue from Step 3** (3a will find next task).
 
