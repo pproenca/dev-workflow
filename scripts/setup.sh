@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(command cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLUGIN_ROOT="$(command cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "=== Setting up dev-workflow for contributors ==="
 echo ""
@@ -63,7 +63,7 @@ fi
 # Setup git hooks
 echo ""
 echo "Setting up pre-commit hooks..."
-cd "$PLUGIN_ROOT"
+command cd "$PLUGIN_ROOT"
 pre-commit install
 
 # Verify

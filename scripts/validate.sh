@@ -6,7 +6,7 @@
 # shellcheck disable=SC2015
 
 set -euo pipefail
-PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PLUGIN_ROOT="$(command cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ERRORS=0
 
 err() { echo "[ERR] $1"; ERRORS=$((ERRORS + 1)); }
