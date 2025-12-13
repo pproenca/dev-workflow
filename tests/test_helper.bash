@@ -6,8 +6,9 @@ PLUGIN_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 export PLUGIN_ROOT
 
 # Create a temporary test directory
+# Use pwd -P to resolve symlinks (macOS /var -> /private/var)
 setup_test_dir() {
-  TEST_DIR="$(mktemp -d)"
+  TEST_DIR="$(cd "$(mktemp -d)" && pwd -P)"
   export TEST_DIR
 }
 
@@ -85,8 +86,9 @@ EOF
 }
 
 # Create isolated git repo for worktree tests
+# Use pwd -P to resolve symlinks (macOS /var -> /private/var)
 setup_git_repo() {
-  TEST_DIR="$(mktemp -d)"
+  TEST_DIR="$(cd "$(mktemp -d)" && pwd -P)"
   export TEST_DIR
   cd "$TEST_DIR" || exit
 

@@ -225,3 +225,56 @@ EOF
   echo "$output" | grep -q '"decision": "approve"'
   assert_valid_json
 }
+
+# ============================================================================
+# Test 11: All tasks complete - should approve (review/finish phase)
+# ============================================================================
+
+@test "all tasks complete - approves for review phase agents" {
+  # Create state where current_task equals total_tasks (all tasks done)
+  mkdir -p "$TEST_DIR/.claude"
+  cat > "$TEST_DIR/.claude/dev-workflow-state.local.md" << EOF
+---
+workflow: subagent
+plan: /path/to/plan.md
+current_task: 5
+total_tasks: 5
+last_commit: $(git -C "$TEST_DIR" rev-parse HEAD)
+---
+EOF
+  cd "$TEST_DIR"
+
+  # No new commit - but should still approve since we're in review phase
+  run "$HOOK"
+
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '"decision": "approve"'
+  assert_valid_json
+}
+
+# ============================================================================
+# Test 12: Tasks still in progress - should require commit
+# ============================================================================
+
+@test "tasks in progress - requires commit" {
+  # Create state where current_task < total_tasks
+  mkdir -p "$TEST_DIR/.claude"
+  cat > "$TEST_DIR/.claude/dev-workflow-state.local.md" << EOF
+---
+workflow: subagent
+plan: /path/to/plan.md
+current_task: 3
+total_tasks: 5
+last_commit: $(git -C "$TEST_DIR" rev-parse HEAD)
+---
+EOF
+  cd "$TEST_DIR"
+
+  # No new commit - should deny since tasks still in progress
+  run "$HOOK"
+
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q '"decision": "deny"'
+  echo "$output" | grep -q "No commit detected"
+  assert_valid_json
+}

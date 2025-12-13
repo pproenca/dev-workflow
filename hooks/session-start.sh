@@ -68,8 +68,8 @@ if [[ -f "$SKILL_FILE" ]]; then
     exit 0
   fi
 
-  # Read and escape content for JSON
-  CONTENT=$(cat "$SKILL_FILE" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+  # Read and escape content for JSON (awk for BSD/GNU portability)
+  CONTENT=$(sed 's/\\/\\\\/g' "$SKILL_FILE" | sed 's/"/\\"/g' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')
 
   cat << EOF
 {

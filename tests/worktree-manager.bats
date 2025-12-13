@@ -348,3 +348,40 @@ EOF
   run grep "^batch_size: 5$" "$state_file"
   [ "$status" -eq 0 ]
 }
+
+@test "setup_worktree_with_state - fails on plan with no tasks" {
+  # Create a plan file WITHOUT valid task headers
+  cat > "$TEST_DIR/empty-plan.md" << 'EOF'
+# Empty Plan
+
+This plan has no tasks.
+
+## Section 1
+Some content without task headers.
+EOF
+
+  # Run the function - should fail
+  run setup_worktree_with_state "$TEST_DIR/empty-plan.md" "execute-plan"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: No tasks found"* ]]
+}
+
+@test "setup_worktree_with_state - fails on wrong task format" {
+  # Create a plan with wrong task header format
+  cat > "$TEST_DIR/bad-format-plan.md" << 'EOF'
+# Plan with wrong format
+
+### Task 1 - First task (dash instead of colon)
+Do something
+
+### Task Two: Second task (word instead of number)
+Do something else
+EOF
+
+  # Run the function - should fail (no valid tasks)
+  run setup_worktree_with_state "$TEST_DIR/bad-format-plan.md" "execute-plan"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: No tasks found"* ]]
+}

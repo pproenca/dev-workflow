@@ -106,8 +106,6 @@ TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
 BATCH_SIZE=$(frontmatter_get "$STATE_FILE" "batch_size" "5")
 BATCH_END=$((CURRENT + BATCH_SIZE))
 [[ $BATCH_END -gt $TOTAL ]] && BATCH_END=$TOTAL
-# Store batch_end in state file for skill to read
-frontmatter_set "$STATE_FILE" "batch_end" "$BATCH_END"
 echo "BATCH:tasks $((CURRENT+1)) to $BATCH_END of $TOTAL"
 ```
 
@@ -133,7 +131,7 @@ Task tool:
     2. cat "[STATE_FILE]"
     3. Skill("dev-workflow:subagent-driven-development")
 
-    Execute tasks until batch_end (stored in state file).
+    Execute until batch boundary (calculated from batch_size in state).
     Do NOT proceed to Final Code Review (caller handles that).
 ```
 
@@ -292,10 +290,8 @@ TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
 BATCH_SIZE=$(frontmatter_get "$STATE_FILE" "batch_size" "5")
 BATCH_END=$((CURRENT + BATCH_SIZE))
 [[ $BATCH_END -gt $TOTAL ]] && BATCH_END=$TOTAL
-WORKTREE=$(frontmatter_get "$STATE_FILE" "worktree" "")
-PLAN=$(frontmatter_get "$STATE_FILE" "plan" "")
-# Store batch_end in state file for skill to read
-frontmatter_set "$STATE_FILE" "batch_end" "$BATCH_END"
+WORKTREE_PATH=$(frontmatter_get "$STATE_FILE" "worktree" "")
+PLAN_FILE=$(frontmatter_get "$STATE_FILE" "plan" "")
 echo "BATCH:tasks $((CURRENT+1)) to $BATCH_END of $TOTAL"
 ```
 
@@ -309,11 +305,11 @@ Task tool:
   prompt: |
     Execute BATCH of tasks (not full plan).
 
-    ## EXPLICIT PATHS
+    ## EXPLICIT PATHS (use these, do not discover)
 
-    WORKTREE_PATH: [WORKTREE]
+    WORKTREE_PATH: [WORKTREE_PATH]
     STATE_FILE: [STATE_FILE]
-    PLAN_FILE: [PLAN]
+    PLAN_FILE: [PLAN_FILE]
 
     ## INSTRUCTIONS
 
@@ -321,7 +317,7 @@ Task tool:
     2. cat "[STATE_FILE]"
     3. Skill("dev-workflow:subagent-driven-development")
 
-    Execute tasks until batch_end (stored in state file).
+    Execute until batch boundary (calculated from batch_size in state).
     Do NOT proceed to Final Code Review (caller handles that).
 ```
 

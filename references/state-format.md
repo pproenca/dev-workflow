@@ -31,9 +31,10 @@ Brief context line (optional)
 | `current_task` | Yes      | Task number in progress (0 = not started)          |
 | `total_tasks`  | Yes      | Total task count from plan                         |
 | `last_commit`  | Yes      | HEAD after last completed task                     |
-| `batch_size`   | No       | Tasks per orchestrator batch (default: 5)          |
-| `batch_end`    | No       | Task number to stop at for current batch           |
+| `batch_size`   | No       | Tasks per orchestrator batch (0 = unbatched)       |
 | `enabled`      | Yes      | `true` to continue, `false` to pause               |
+
+**Note:** Batch boundaries are calculated dynamically as `min(current_task + batch_size, total_tasks)`. No need to store batch_end in state.
 
 ## Why Explicit Worktree Path
 

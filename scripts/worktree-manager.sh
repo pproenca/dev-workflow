@@ -154,15 +154,25 @@ setup_worktree_with_handoff() {
 # workflow_type: "execute-plan" | "subagent"
 # Returns: worktree path
 # Outputs to stderr: STATE_FILE path
+# Exits with error if plan has no tasks
 setup_worktree_with_state() {
   local plan_file="$1"
   local workflow_type="${2:-execute-plan}"
 
   local plan_abs worktree_name worktree_path total_tasks base_sha state_file
   plan_abs="$(realpath "$plan_file")"
+
+  # Validate plan has tasks before creating worktree
+  total_tasks=$(grep -c "^### Task [0-9]\+:" "$plan_abs" 2>/dev/null || true)
+  total_tasks="${total_tasks:-0}"
+  if [[ "$total_tasks" -eq 0 ]]; then
+    echo "ERROR: No tasks found in plan file: $plan_abs" >&2
+    echo "Expected format: '### Task N: Description'" >&2
+    return 1
+  fi
+
   worktree_name="$(generate_worktree_name "$plan_file")"
   worktree_path="$(create_worktree "$worktree_name")"
-  total_tasks=$(grep -c "^### Task [0-9]\+:" "$plan_abs" || echo "0")
   base_sha=$(git rev-parse HEAD)
   state_file="${worktree_path}/.claude/dev-workflow-state.local.md"
 

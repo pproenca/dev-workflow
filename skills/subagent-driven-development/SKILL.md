@@ -24,8 +24,8 @@ After loading this skill, execute all steps until "Workflow complete". Only perm
 
 State file is worktree-scoped (`.claude/dev-workflow-state.local.md`).
 
-**Parallel executions:** Each must be in separate worktree.
-**Maximum 3 parallel subagents** per batch.
+**Parallel workflows:** Multiple workflows can run simultaneously in separate worktrees (different terminal sessions).
+**Within-session execution:** Tasks execute sequentially within each session. True parallelization requires multiple terminal sessions, each in its own worktree.
 
 ## Prerequisites
 
@@ -37,7 +37,9 @@ Before this skill loads, you should have received:
 
 **If you don't have WORKTREE_PATH, STATE_FILE, or PLAN_FILE:** Stop and report error. The caller must provide explicit paths.
 
-**Batch mode:** If state file contains `batch_end` field, this is a batched execution. Stop after reaching batch_end and do NOT proceed to Final Code Review (caller handles that after all batches complete).
+**Batch mode detection:** Check `batch_size` in state file. If present and > 0, this is batched execution. Calculate your batch boundary as: `batch_end = min(current_task + batch_size, total_tasks)`. Execute until batch_end, then STOP. Do NOT proceed to Final Code Review (caller handles that).
+
+**Unbatched mode:** If `batch_size` is 0 or missing, execute all tasks, then proceed to Final Code Review.
 
 **Model requirement:** Orchestration requires opus-level reasoning. If session uses sonnet/haiku, consider using `/dev-workflow:execute-plan` instead for sequential execution.
 
@@ -60,25 +62,25 @@ Read the state file to extract all paths:
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 STATE_FILE="[STATE_FILE from your prompt]"
 
-WORKTREE=$(frontmatter_get "$STATE_FILE" "worktree" "")
-PLAN=$(frontmatter_get "$STATE_FILE" "plan" "")
+WORKTREE_PATH=$(frontmatter_get "$STATE_FILE" "worktree" "")
+PLAN_FILE=$(frontmatter_get "$STATE_FILE" "plan" "")
 CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
 TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
 BASE_SHA=$(frontmatter_get "$STATE_FILE" "base_sha" "")
 
-echo "WORKTREE:$WORKTREE"
-echo "PLAN:$PLAN"
+echo "WORKTREE_PATH:$WORKTREE_PATH"
+echo "PLAN_FILE:$PLAN_FILE"
 echo "PROGRESS:$CURRENT/$TOTAL"
 ```
 
-**Store these values - you will pass them to every subagent.**
+**Store these values - you will pass them to every subagent as WORKTREE_PATH, STATE_FILE, PLAN_FILE.**
 
 ## Step 1: Setup TodoWrite
 
 Extract tasks and create TodoWrite items:
 
 ```bash
-grep -E "^### Task [0-9]+:" "$PLAN" | sed 's/^### Task \([0-9]*\): \(.*\)/Task \1: \2/'
+grep -E "^### Task [0-9]+:" "$PLAN_FILE" | sed 's/^### Task \([0-9]*\): \(.*\)/Task \1: \2/'
 ```
 
 Use TodoWrite for: all tasks + "Final Code Review" + "Finish Branch".
@@ -86,15 +88,17 @@ Use TodoWrite for: all tasks + "Final Code Review" + "Finish Branch".
 ## Step 2: Analyze Dependencies
 
 ```bash
-awk '/^### Task [0-9]+:/,/^### Task [0-9]+:|^## /' "$PLAN" | \
+awk '/^### Task [0-9]+:/,/^### Task [0-9]+:|^## /' "$PLAN_FILE" | \
   grep -E '(Create|Modify|Test):' | \
   grep -oE '`[^`]+`' | tr -d '`' | sort -u
 ```
 
 Build dependency model:
 
-- File overlap → Sequential
-- No overlap → Can parallelize (max 3)
+- File overlap → Must execute sequentially (even across worktrees)
+- No overlap → Can run in parallel worktrees (separate terminal sessions)
+
+**To parallelize independent tasks:** Create multiple worktrees and run separate `/dev-workflow:execute-plan` sessions in each. Tasks with no file overlap can safely run simultaneously in different worktrees.
 
 ## Step 3: Execute Tasks
 
@@ -104,14 +108,23 @@ Build dependency model:
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
 TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
-# Read batch_end from state file, default to TOTAL if not set (unbatched mode)
-BATCH_END=$(frontmatter_get "$STATE_FILE" "batch_end" "$TOTAL")
-echo "PROGRESS:$CURRENT/$BATCH_END (total: $TOTAL)"
+BATCH_SIZE=$(frontmatter_get "$STATE_FILE" "batch_size" "0")
+
+# Calculate batch boundary (0 = unbatched mode, execute all)
+if [[ "$BATCH_SIZE" -gt 0 ]]; then
+  BATCH_END=$((CURRENT + BATCH_SIZE))
+  [[ $BATCH_END -gt $TOTAL ]] && BATCH_END=$TOTAL
+  IS_BATCHED="true"
+else
+  BATCH_END=$TOTAL
+  IS_BATCHED="false"
+fi
+echo "PROGRESS:$CURRENT/$BATCH_END (total: $TOTAL, batched: $IS_BATCHED)"
 ```
 
 **If CURRENT >= BATCH_END:**
-- If BATCH_END < TOTAL: Report "Batch complete ($CURRENT tasks done)" and **STOP** (caller spawns next batch)
-- If BATCH_END == TOTAL: Go to Step 4 (Final Code Review)
+- If IS_BATCHED="true" and BATCH_END < TOTAL: Report "Batch complete ($CURRENT tasks done)" and **STOP** (caller spawns next batch)
+- Otherwise: Go to Step 4 (Final Code Review)
 
 ### 3b. Select Model
 
@@ -169,7 +182,7 @@ After subagent returns:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-cd "$WORKTREE"
+cd "$WORKTREE_PATH"
 
 LAST_COMMIT=$(frontmatter_get "$STATE_FILE" "last_commit" "")
 CURRENT_HEAD=$(git rev-parse HEAD)
@@ -181,7 +194,62 @@ else
 fi
 ```
 
-**If NO_COMMIT:** Dispatch fix subagent with error context. Do not attempt manual fix (context pollution).
+**If NO_COMMIT:**
+
+Get error context:
+```bash
+cd "$WORKTREE_PATH"
+echo "=== Git Status ==="
+git status --short
+echo "=== Uncommitted Changes ==="
+git diff --stat 2>/dev/null || true
+```
+
+Dispatch fix subagent (escalate to opus):
+
+```claude
+Task tool:
+  model: opus
+  prompt: |
+    Task [N] failed to complete with commit.
+
+    ## PATHS
+    WORKTREE_PATH: [WORKTREE]
+    STATE_FILE: [STATE_FILE]
+    PLAN_FILE: [PLAN]
+
+    ## ERROR CONTEXT
+    [paste git status and diff output]
+
+    ## INSTRUCTIONS
+    1. cd "[WORKTREE_PATH]"
+    2. Diagnose the issue (test failures, incomplete implementation)
+    3. Fix the problem
+    4. Run tests: [test command]
+    5. Commit: git add -A && git commit -m "fix: [description]"
+
+    CONSTRAINT: You MUST commit before returning.
+```
+
+If fix subagent also returns NO_COMMIT, use AskUserQuestion:
+
+```claude
+AskUserQuestion:
+  header: "Blocker"
+  question: "Task [N] failed twice. What should we do?"
+  multiSelect: false
+  options:
+    - label: "Skip"
+      description: "Mark incomplete, continue to next task"
+    - label: "Retry manually"
+      description: "Provide guidance to help resolve"
+    - label: "Abort"
+      description: "Stop workflow, preserve state for later"
+```
+
+- If "Skip": Increment current_task, mark task as skipped in TodoWrite, continue to 3a
+- If "Retry manually": Wait for user guidance, then dispatch another fix subagent
+- If "Abort": STOP workflow
 
 **If COMMITTED:** Update state:
 
@@ -202,13 +270,13 @@ Return to 3a.
 
 ## Step 4: Final Code Review
 
-**Skip if batch mode:** Check state file - if `batch_end` exists and is less than `total_tasks`, report "Batch complete" and **STOP**. Caller handles Final Code Review after all batches.
+**Skip if batch mode:** If you're in batched mode (batch_size > 0 in state), report "Batch complete" and **STOP**. Caller handles Final Code Review after all batches complete.
 
 Mark "Final Code Review" `in_progress`.
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-cd "$WORKTREE"
+cd "$WORKTREE_PATH"
 BASE_SHA=$(frontmatter_get "$STATE_FILE" "base_sha" "")
 git diff "$BASE_SHA"..HEAD --stat
 ```
@@ -270,7 +338,7 @@ When state file exists with CURRENT > 0:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-PLAN="$(frontmatter_get "$STATE_FILE" "plan" "")"
+PLAN_FILE="$(frontmatter_get "$STATE_FILE" "plan" "")"
 CURRENT="$(frontmatter_get "$STATE_FILE" "current_task" "0")"
 TOTAL="$(frontmatter_get "$STATE_FILE" "total_tasks" "0")"
 ENABLED="$(frontmatter_get "$STATE_FILE" "enabled" "true")"
@@ -283,7 +351,7 @@ If `enabled: false`, ask user if they want to continue.
 **3. Verify plan exists:**
 
 ```bash
-test -f "$PLAN" || echo "Plan file missing: $PLAN"
+test -f "$PLAN_FILE" || echo "Plan file missing: $PLAN_FILE"
 ```
 
 **4. Rebuild TodoWrite** based on current_task position.
@@ -298,7 +366,7 @@ cat "$STATE_FILE"
 
 # Rollback
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-cd "$WORKTREE"
+cd "$WORKTREE_PATH"
 BASE_SHA=$(frontmatter_get "$STATE_FILE" "base_sha" "")
 git reset --hard "$BASE_SHA"
 rm "$STATE_FILE"
@@ -310,16 +378,15 @@ rm "$STATE_FILE"
 
 - Skip Final Code Review
 - Proceed with Critical issues unfixed
-- Dispatch parallel subagents on overlapping files
 - Mark task complete without commit verification
 - Use task-indexed commit messages (use conventional commits)
-- Attempt manual fix when subagent fails (context pollution)
+- Attempt manual fix when subagent fails (dispatch fix subagent instead)
 
 **If subagent fails:**
 
 1. Check git status for uncommitted changes
-2. Dispatch fix subagent with error context
-3. If fix subagent fails twice, use Handle Blocker pattern
+2. Dispatch fix subagent (opus model) with error context
+3. If fix subagent also fails, use AskUserQuestion to get user decision (Skip/Retry/Abort)
 
 ## Key Principle
 
