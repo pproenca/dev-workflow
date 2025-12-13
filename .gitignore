@@ -1,2 +1,7 @@
 # Git worktrees created by dev-workflow plugin for isolated plan execution
 .worktrees/
+
+# Dev-workflow local state files (worktree-scoped, not shared)
+.claude/*.local.md
+.claude/task-outputs/
+.claude/dev-workflow-progress.log

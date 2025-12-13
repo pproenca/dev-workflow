@@ -132,14 +132,21 @@ Save to: `docs/plans/YYYY-MM-DD-<feature-name>.md`
 ---
 ```
 
-### Task Structure
+### Task Structure (Anthropic Pattern)
 
-Each task: one logical unit (10-30 minutes), TDD cycle included.
+Each task: one logical unit, TDD cycle included, with effort estimate.
 
-**IMPORTANT:** Tasks MUST use `###` (H3) headers exactly as shown. The execute-plan command uses `grep -E "^### Task [0-9]+:"` to extract tasks - using `##` will break extraction.
+**IMPORTANT:** Tasks MUST use `###` (H3) headers exactly as shown. The execute-plan command uses `grep -E "^### Task [0-9]+:"` to extract tasks.
+
+**Parallel Execution:** Tasks with NO file overlap execute in parallel (3-5 per group). Order tasks so independent work comes in batches.
 
 ````markdown
 ### Task N: [Component Name]
+
+**Effort:** simple | standard | complex
+- simple: 3-10 tool calls (single file, straightforward)
+- standard: 10-15 tool calls (2-3 files, some complexity)
+- complex: 15-25 tool calls (4+ files, architectural)
 
 **Files:**
 
@@ -170,6 +177,22 @@ Each task: one logical unit (10-30 minutes), TDD cycle included.
 
 5. Commit: `git add -A && git commit -m "feat: [description]"`
 ````
+
+### Parallel Grouping Strategy
+
+When ordering tasks, maximize parallel execution:
+
+| Task Group | Tasks | Rationale |
+|------------|-------|-----------|
+| Group 1 | 1, 2, 3 | Independent modules, no file overlap |
+| Group 2 | 4, 5 | Both touch shared types, must be serial |
+| Group 3 | 6, 7, 8, 9 | Independent tests, no file overlap |
+
+**Guidelines:**
+- Tasks touching the SAME file → different groups (serial)
+- Tasks touching DIFFERENT files → same group (parallel)
+- Maximum 5 tasks per group (Anthropic pattern)
+- Complex tasks often need their own group
 
 ### Requirements
 

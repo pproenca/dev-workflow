@@ -12,8 +12,13 @@ plan: /absolute/path/to/plan.md
 base_sha: abc123def
 current_task: 3
 total_tasks: 5
+current_group: 2
+total_groups: 4
 last_commit: def456abc
 batch_size: 5
+parallel_mode: true
+retry_count: 0
+failed_tasks: ""
 enabled: true
 ---
 
@@ -22,19 +27,24 @@ Brief context line (optional)
 
 ## Fields
 
-| Field          | Required | Description                                        |
-| -------------- | -------- | -------------------------------------------------- |
-| `workflow`     | Yes      | `execute-plan` or `subagent`                       |
-| `worktree`     | Yes      | Absolute path to worktree directory                |
-| `plan`         | Yes      | Absolute path to plan file                         |
-| `base_sha`     | Yes      | Commit before workflow started                     |
-| `current_task` | Yes      | Task number in progress (0 = not started)          |
-| `total_tasks`  | Yes      | Total task count from plan                         |
-| `last_commit`  | Yes      | HEAD after last completed task                     |
-| `batch_size`   | No       | Tasks per orchestrator batch (0 = unbatched)       |
-| `enabled`      | Yes      | `true` to continue, `false` to pause               |
+| Field           | Required | Description                                        |
+| --------------- | -------- | -------------------------------------------------- |
+| `workflow`      | Yes      | `execute-plan` or `subagent`                       |
+| `worktree`      | Yes      | Absolute path to worktree directory                |
+| `plan`          | Yes      | Absolute path to plan file                         |
+| `base_sha`      | Yes      | Commit before workflow started                     |
+| `current_task`  | Yes      | Task number in progress (0 = not started)          |
+| `total_tasks`   | Yes      | Total task count from plan                         |
+| `current_group` | No       | Current parallel group (1-indexed, for parallel mode) |
+| `total_groups`  | No       | Total number of parallel groups                    |
+| `last_commit`   | Yes      | HEAD after last completed task                     |
+| `batch_size`    | No       | Tasks per orchestrator batch (0 = unbatched)       |
+| `parallel_mode` | No       | `true` for parallel execution, `false` for serial  |
+| `retry_count`   | No       | Number of retries for current failing task (0-2)   |
+| `failed_tasks`  | No       | Comma-separated list of skipped task numbers       |
+| `enabled`       | Yes      | `true` to continue, `false` to pause               |
 
-**Note:** Batch boundaries are calculated dynamically as `min(current_task + batch_size, total_tasks)`. No need to store batch_end in state.
+**Note:** Group boundaries are computed by `group_tasks_by_dependency()` based on file overlap analysis.
 
 ## Why Explicit Worktree Path
 
@@ -194,6 +204,9 @@ current_task: 3
 total_tasks: 5
 last_commit: [git rev-parse HEAD]
 batch_size: 5
+parallel_mode: true
+retry_count: 0
+failed_tasks: ""
 enabled: true
 ---
 
@@ -211,3 +224,127 @@ The plan file and git history remain intact. Only `current_task` needs manual ve
 4. **State file for position** - Current task tracked here, not in commits
 5. **Minimal tokens** - ~50 tokens vs ~350+ in verbose format
 6. **Atomic updates** - Use temp file + mv pattern
+
+## Progress Log (Anthropic Pattern)
+
+Location: `.claude/dev-workflow-progress.log`
+
+The progress log provides session continuity and enables quick context restoration on resume.
+
+### Format
+
+```
+[2024-01-15T10:30:00Z] PLAN: Created plan with 12 tasks, 4 parallel groups
+[2024-01-15T10:31:00Z] GROUP_START: Group 1 (tasks 1-4, independent files)
+[2024-01-15T10:32:00Z] TASK_COMPLETE: Task 1 - commit:abc123 - 8 tool calls
+[2024-01-15T10:32:30Z] TASK_COMPLETE: Task 2 - commit:def456 - 12 tool calls
+[2024-01-15T10:33:00Z] TASK_COMPLETE: Task 3 - commit:ghi789 - 6 tool calls
+[2024-01-15T10:33:30Z] TASK_COMPLETE: Task 4 - commit:jkl012 - 10 tool calls
+[2024-01-15T10:33:35Z] GROUP_COMPLETE: Group 1 - 4/4 tasks, 36 total tool calls
+[2024-01-15T10:33:40Z] PHASE_SUMMARY: Implemented auth module (tasks 1-4), all tests pass
+[2024-01-15T10:34:00Z] GROUP_START: Group 2 (tasks 5-8, API endpoints)
+```
+
+### Event Types
+
+| Event           | When Logged                          |
+| --------------- | ------------------------------------ |
+| `PLAN`          | Plan created or loaded               |
+| `GROUP_START`   | Parallel group execution begins      |
+| `TASK_COMPLETE` | Individual task completed            |
+| `GROUP_COMPLETE`| All tasks in group finished          |
+| `PHASE_SUMMARY` | Summary before next phase (context)  |
+| `ERROR`         | Error occurred (for recovery)        |
+| `RESUME`        | Session resumed from checkpoint      |
+
+### Helper Functions
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+
+# Log an event
+log_progress "TASK_COMPLETE" "Task 3 - commit:abc123 - 8 tool calls"
+
+# Get recent progress (for resume)
+get_recent_progress 10
+
+# Get last phase summary (for context)
+get_last_phase_summary
+```
+
+## Task Outputs (Lightweight Reference Pattern)
+
+Location: `.claude/task-outputs/task-{N}.md`
+
+Subagents write output to filesystem instead of returning through orchestrator. This prevents context bloat.
+
+### Pattern
+
+```
+Subagent executes task
+    ↓
+Writes output to: .claude/task-outputs/task-3.md
+    ↓
+Returns lightweight reference:
+    { "task": 3, "commit": "abc123", "status": "complete" }
+    ↓
+Orchestrator reads output file ONLY if synthesis needed
+```
+
+### Output File Format
+
+```markdown
+# Task 3: Implement user authentication
+
+## Status: complete
+## Commit: abc123def
+## Tool Calls: 8
+
+## Files Changed
+- src/auth/login.ts (created)
+- src/auth/types.ts (modified)
+- tests/auth/login.test.ts (created)
+
+## Summary
+Implemented JWT-based login endpoint with password hashing.
+All tests pass.
+
+## Notes
+Used bcrypt for password hashing per security requirements.
+```
+
+### Helper Functions
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+
+# Get output file path
+OUTPUT_FILE=$(create_task_output_path 3)
+echo "Writing to: $OUTPUT_FILE"
+```
+
+## Parallel Execution Groups
+
+Tasks are grouped by file dependencies for parallel execution.
+
+### Grouping Rules
+
+1. Tasks with **no file overlap** → Can execute in parallel (same group)
+2. Tasks with **file overlap** → Must execute serially (different groups)
+3. Maximum **5 tasks per group** (Anthropic pattern)
+
+### Helper Functions
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+
+# Get files touched by a task
+get_task_files "$PLAN_FILE" 3
+
+# Check if two tasks have dependency
+tasks_overlap "$PLAN_FILE" 3 4  # Returns 0 if overlap, 1 if no overlap
+
+# Group all tasks by dependency
+# Output: group1:1,2,3|group2:4,5|group3:6,7,8
+group_tasks_by_dependency "$PLAN_FILE" "$TOTAL_TASKS" 5
+```

@@ -185,6 +185,8 @@ setup_worktree_with_state() {
   state_file="${worktree_path}/.claude/dev-workflow-state.local.md"
 
   mkdir -p "${worktree_path}/.claude"
+  mkdir -p "${worktree_path}/.claude/task-outputs"
+  touch "${worktree_path}/.claude/dev-workflow-progress.log"
   cat > "$state_file" << EOF
 ---
 workflow: ${workflow_type}
@@ -195,11 +197,19 @@ current_task: 0
 total_tasks: ${total_tasks}
 last_commit: ${base_sha}
 batch_size: 5
+parallel_mode: true
+retry_count: 0
+failed_tasks: ""
 enabled: true
 ---
 
 Initialized from ${workflow_type}
 EOF
+
+  # Log initialization (cd to worktree for correct git root detection)
+  # shellcheck source=scripts/hook-helpers.sh
+  source "${BASH_SOURCE%/*}/hook-helpers.sh"
+  (cd "$worktree_path" && log_progress "PLAN" "Initialized ${workflow_type} with ${total_tasks} tasks")
 
   # Output state file path to stderr for capture
   echo "STATE_FILE:${state_file}" >&2

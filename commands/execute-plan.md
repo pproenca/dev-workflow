@@ -85,39 +85,51 @@ AskUserQuestion:
 
 **If "Subagents" selected:**
 
-Update workflow type and batch size in state:
+Update workflow type and enable parallel mode (Anthropic pattern):
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 frontmatter_set "$STATE_FILE" "workflow" "subagent"
-frontmatter_set "$STATE_FILE" "batch_size" "5"
+frontmatter_set "$STATE_FILE" "parallel_mode" "true"
+
+# Analyze task groups for parallel execution
+PLAN_FILE=$(frontmatter_get "$STATE_FILE" "plan" "")
+TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
+GROUPS=$(group_tasks_by_dependency "$PLAN_FILE" "$TOTAL" 5)
+TOTAL_GROUPS=$(echo "$GROUPS" | tr '|' '\n' | wc -l | tr -d ' ')
+
+log_progress "PLAN" "Initialized with $TOTAL tasks in $TOTAL_GROUPS parallel groups"
+echo "PARALLEL_GROUPS: $GROUPS"
+echo "TOTAL_GROUPS: $TOTAL_GROUPS"
 ```
 
-### Batch Execution Loop
+### Parallel Group Execution Loop
 
-Execute tasks in batches with fresh orchestrators to prevent memory exhaustion.
+Execute task GROUPS (not individual tasks). Each group contains 3-5 independent tasks that run in parallel.
 
-**Check remaining tasks:**
+**Check remaining groups:**
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
 TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
-BATCH_SIZE=$(frontmatter_get "$STATE_FILE" "batch_size" "5")
-BATCH_END=$((CURRENT + BATCH_SIZE))
-[[ $BATCH_END -gt $TOTAL ]] && BATCH_END=$TOTAL
-echo "BATCH:tasks $((CURRENT+1)) to $BATCH_END of $TOTAL"
+
+if [[ "$CURRENT" -ge "$TOTAL" ]]; then
+  echo "ALL_COMPLETE"
+else
+  echo "PROGRESS: $CURRENT/$TOTAL tasks complete"
+fi
 ```
 
 **While CURRENT < TOTAL:**
 
-Dispatch batch orchestrator (slim prompt - state file has all paths):
+Dispatch parallel group orchestrator (Anthropic pattern):
 
 ```claude
 Task tool:
   model: opus
   prompt: |
-    Execute batch of tasks.
+    Execute next parallel group of tasks.
 
     WORKTREE_PATH: [WORKTREE_PATH]
     STATE_FILE: [STATE_FILE]
@@ -125,21 +137,30 @@ Task tool:
     1. cd "[WORKTREE_PATH]"
     2. Skill("dev-workflow:subagent-driven-development")
 
-    State file contains: plan path, current_task, batch_size, total.
-    Skill reads plan, extracts task sections, dispatches subagents.
-    Stop at batch boundary. Do NOT proceed to Final Code Review.
+    The skill will:
+    - Analyze task dependencies → create parallel groups (max 5 tasks each)
+    - Dispatch 3-5 subagents IN PARALLEL per group
+    - Log progress to .claude/dev-workflow-progress.log
+    - Write phase summaries between groups
+    - Update state after group completes
+
+    Execute ONE group, then return. Do NOT proceed to Final Code Review.
 ```
 
-After batch returns, check progress:
+After group returns, check progress:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
 TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
-echo "PROGRESS:$CURRENT/$TOTAL"
+
+# Show recent progress
+get_recent_progress 3
+
+echo "PROGRESS: $CURRENT/$TOTAL tasks complete"
 ```
 
-**If CURRENT < TOTAL:** Loop back to "Check remaining tasks" (spawns fresh orchestrator).
+**If CURRENT < TOTAL:** Loop back to "Check remaining groups" (spawns fresh orchestrator for next group).
 
 **If CURRENT >= TOTAL:** Proceed to **Step 6: Final Code Review**.
 
@@ -279,39 +300,46 @@ AskUserQuestion:
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 frontmatter_set "$STATE_FILE" "workflow" "subagent"
-frontmatter_set "$STATE_FILE" "batch_size" "5"
+frontmatter_set "$STATE_FILE" "parallel_mode" "true"
+
+# Analyze and log parallel groups
+PLAN_FILE=$(frontmatter_get "$STATE_FILE" "plan" "")
+TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
+GROUPS=$(group_tasks_by_dependency "$PLAN_FILE" "$TOTAL" 5)
+TOTAL_GROUPS=$(echo "$GROUPS" | tr '|' '\n' | wc -l | tr -d ' ')
+
+log_progress "PLAN" "Initialized with $TOTAL tasks in $TOTAL_GROUPS parallel groups"
+echo "PARALLEL_GROUPS: $GROUPS"
 ```
 
-### Batch Execution Loop (in worktree)
+### Parallel Group Execution Loop (in worktree)
 
-Execute tasks in batches with fresh orchestrators to prevent memory exhaustion.
+Execute task GROUPS with fresh orchestrators per group.
 
-**Check remaining tasks:**
+**Check remaining groups:**
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
 TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
-BATCH_SIZE=$(frontmatter_get "$STATE_FILE" "batch_size" "5")
-BATCH_END=$((CURRENT + BATCH_SIZE))
-[[ $BATCH_END -gt $TOTAL ]] && BATCH_END=$TOTAL
 WORKTREE_PATH=$(frontmatter_get "$STATE_FILE" "worktree" "")
-PLAN_FILE=$(frontmatter_get "$STATE_FILE" "plan" "")
-echo "BATCH:tasks $((CURRENT+1)) to $BATCH_END of $TOTAL"
-echo "WORKTREE_PATH:$WORKTREE_PATH"
-echo "STATE_FILE:$STATE_FILE"
-echo "PLAN_FILE:$PLAN_FILE"
+
+if [[ "$CURRENT" -ge "$TOTAL" ]]; then
+  echo "ALL_COMPLETE"
+else
+  echo "PROGRESS: $CURRENT/$TOTAL tasks complete"
+fi
 ```
 
 **While CURRENT < TOTAL:**
 
-Dispatch batch orchestrator (slim prompt - state file has all paths):
+Dispatch parallel group orchestrator:
 
 ```claude
 Task tool:
   model: opus
   prompt: |
-    Execute batch of tasks.
+    Execute next parallel group of tasks.
 
     WORKTREE_PATH: [WORKTREE_PATH]
     STATE_FILE: [STATE_FILE]
@@ -319,21 +347,28 @@ Task tool:
     1. cd "[WORKTREE_PATH]"
     2. Skill("dev-workflow:subagent-driven-development")
 
-    State file contains: plan path, current_task, batch_size, total.
-    Skill reads plan, extracts task sections, dispatches subagents.
-    Stop at batch boundary. Do NOT proceed to Final Code Review.
+    The skill will:
+    - Analyze task dependencies → create parallel groups (max 5 tasks each)
+    - Dispatch 3-5 subagents IN PARALLEL per group
+    - Log progress to .claude/dev-workflow-progress.log
+    - Write phase summaries between groups
+    - Update state after group completes
+
+    Execute ONE group, then return. Do NOT proceed to Final Code Review.
 ```
 
-After batch returns, check progress:
+After group returns, check progress:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
 TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
-echo "PROGRESS:$CURRENT/$TOTAL"
+
+get_recent_progress 3
+echo "PROGRESS: $CURRENT/$TOTAL tasks complete"
 ```
 
-**If CURRENT < TOTAL:** Loop back to "Check remaining tasks" (spawns fresh orchestrator).
+**If CURRENT < TOTAL:** Loop back to "Check remaining groups" (fresh orchestrator).
 
 **If CURRENT >= TOTAL:** Proceed to **Step 6: Final Code Review**.
 
@@ -438,6 +473,43 @@ AskUserQuestion:
     - label: "Stop"
       description: "Exit and preserve state for later"
 ```
+
+**If Skip selected:**
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+FAILED=$(frontmatter_get "$STATE_FILE" "failed_tasks" "")
+[[ -n "$FAILED" ]] && FAILED="${FAILED},"
+frontmatter_set "$STATE_FILE" "failed_tasks" "${FAILED}${TASK_NUM}"
+frontmatter_set "$STATE_FILE" "current_task" "$NEXT"
+frontmatter_set "$STATE_FILE" "retry_count" "0"
+echo "SKIPPED: Task $TASK_NUM added to failed_tasks"
+```
+
+Mark task as "skipped" in TodoWrite, continue to next task.
+
+**If Retry selected:**
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+RETRY=$(frontmatter_get "$STATE_FILE" "retry_count" "0")
+frontmatter_set "$STATE_FILE" "retry_count" "$((RETRY + 1))"
+echo "RETRY: Attempt $((RETRY + 1)) for task $TASK_NUM"
+```
+
+Wait for user guidance, then return to Step 4b with guidance applied.
+
+**If retry_count >= 2:** Force Skip or Stop (no more retries).
+
+**If Stop selected:**
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+frontmatter_set "$STATE_FILE" "enabled" "false"
+echo "PAUSED: State preserved at $STATE_FILE"
+```
+
+Report state file location and **STOP**. Workflow can be resumed later.
 
 ## Step 6: Final Code Review
 
