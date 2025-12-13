@@ -293,6 +293,9 @@ BATCH_END=$((CURRENT + BATCH_SIZE))
 WORKTREE_PATH=$(frontmatter_get "$STATE_FILE" "worktree" "")
 PLAN_FILE=$(frontmatter_get "$STATE_FILE" "plan" "")
 echo "BATCH:tasks $((CURRENT+1)) to $BATCH_END of $TOTAL"
+echo "WORKTREE_PATH:$WORKTREE_PATH"
+echo "STATE_FILE:$STATE_FILE"
+echo "PLAN_FILE:$PLAN_FILE"
 ```
 
 **While CURRENT < TOTAL:**

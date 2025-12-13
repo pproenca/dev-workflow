@@ -136,6 +136,8 @@ Save to: `docs/plans/YYYY-MM-DD-<feature-name>.md`
 
 Each task: one logical unit (10-30 minutes), TDD cycle included.
 
+**IMPORTANT:** Tasks MUST use `###` (H3) headers exactly as shown. The execute-plan command uses `grep -E "^### Task [0-9]+:"` to extract tasks - using `##` will break extraction.
+
 ````markdown
 ### Task N: [Component Name]
 
