@@ -97,37 +97,36 @@ See `references/skill-integration.md` for decision tree and skill chains.
 | Feature | Benefit |
 |---------|---------|
 | Plans persist to `docs/plans/` | Version controlled, reviewable |
-| Parallel execution via `Task(run_in_background)` | Native background agents with concurrent `TaskOutput` wait |
-| Task grouping by file overlap | No conflicts, maximum parallelism |
+| Native swarm via `EnterPlanMode` + `ExitPlanMode` | Claude Code's parallel execution |
+| Task grouping by file overlap | Determines optimal `teammateCount` |
 | Automatic post-completion | Code review + finish branch enforced |
 | Resume capability | `SubagentStop` hook tracks progress |
 
-### When to Use Native `EnterPlanMode`
+### How Native Swarm Integration Works
 
-Use `EnterPlanMode` directly (without plugin commands) ONLY when:
-- You're in a conversation and want Claude to write a plan interactively
-- The plan is simple (1-3 tasks) and doesn't need to persist
-- You want Claude's native planning UX
-
-**Important:** `ExitPlanMode(launchSwarm: true)` reads from Claude's internal plan file, NOT from `docs/plans/`. It's designed for plans Claude just wrote in plan mode.
-
-### Parallel Execution: How It Works
-
-The `/dev-workflow:execute-plan` command uses native Claude Code patterns:
+The `/dev-workflow:execute-plan` command integrates with Claude Code's native swarm:
 
 ```
-# 1. Dispatch group with MULTIPLE Task calls in ONE message:
-Task(run_in_background: true, prompt: "Execute Task 1...")
-Task(run_in_background: true, prompt: "Execute Task 2...")
-Task(run_in_background: true, prompt: "Execute Task 3...")
-
-# 2. Wait concurrently with MULTIPLE TaskOutput calls in ONE message:
-TaskOutput(task_id: id1, block: true)
-TaskOutput(task_id: id2, block: true)
-TaskOutput(task_id: id3, block: true)
+1. EnterPlanMode                    # Enter native plan mode
+2. Read plan from docs/plans/...    # Our persisted plan
+3. Write to native plan file        # System reads from here
+4. ExitPlanMode(launchSwarm: true)  # Launch native swarm
 ```
 
-This is the native pattern for parallel agents. The `SubagentStop` hook fires when each agent completes, updating the state file automatically.
+This approach:
+- Preserves plan in `docs/plans/` for version control
+- Uses native plan mode UX (user approval flow)
+- Leverages native swarm for parallel execution
+- `SubagentStop` hook fires for each teammate → updates state
+
+### When to Use Native `EnterPlanMode` Directly
+
+Use `EnterPlanMode` without plugin commands when:
+- Quick prototyping (plan doesn't need to persist)
+- Simple 1-3 task features
+- You want Claude to write the plan interactively
+
+For features that need plan persistence, code review, and resume capability, use the plugin commands flow.
 
 ---
 

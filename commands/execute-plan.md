@@ -100,124 +100,69 @@ Mark task `completed` in TodoWrite. Continue to next task.
 
 ---
 
-## Parallel Execution
+## Parallel Execution (Native Swarm)
 
-Uses native `Task(run_in_background: true)` + `TaskOutput` pattern for concurrent agents.
+Leverages Claude Code's native swarm by entering plan mode with our plan content.
 
-### 3a. Analyze Task Groups
-
-Identify tasks that can run in parallel (no file overlap):
+### 3a. Analyze Plan for Swarm
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 PLAN_FILE="$ARGUMENTS"
 TOTAL=$(frontmatter_get "$(get_state_file)" "total_tasks" "0")
 
-# Group tasks by file dependencies (max 5 per group)
+# Analyze parallel groups to determine teammateCount
 GROUPS=$(group_tasks_by_dependency "$PLAN_FILE" "$TOTAL" 5)
+GROUP_COUNT=$(echo "$GROUPS" | tr '|' '\n' | wc -l | tr -d ' ')
+
 echo "PARALLEL_GROUPS: $GROUPS"
-# Format: group1:1,2,3|group2:4,5|group3:6,7,8
+echo "GROUP_COUNT: $GROUP_COUNT"
+
+# Calculate teammateCount (max parallelism from groups)
+# 1-2 groups: 2 teammates | 3-4 groups: 3-4 | 5+: 5 max
 ```
 
-### 3b. Execute Each Group
+### 3b. Enter Plan Mode
 
-For each group, execute tasks in parallel:
+Use `EnterPlanMode` to transition into native plan mode:
 
-#### Extract Tasks for Current Group
+```claude
+EnterPlanMode
+```
+
+### 3c. Write Our Plan to Native Plan File
+
+Once in plan mode, read our persisted plan and write to the native plan file:
 
 ```bash
-source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-STATE_FILE="$(get_state_file)"
-CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
-PLAN_FILE=$(frontmatter_get "$STATE_FILE" "plan" "")
-
-# Find next group to execute
-# ... parse GROUPS to find tasks after CURRENT
+# Read our plan from docs/plans/
+PLAN_CONTENT=$(cat "$PLAN_FILE")
+echo "$PLAN_CONTENT"
 ```
 
-#### Dispatch Group with Background Agents
+Write this content to the native plan file (the system provides the path during plan mode).
 
-**CRITICAL:** Send ALL Task calls for the group in a SINGLE message. This enables true parallel execution.
+**Important:** The plan is already in the correct task format (`### Task N: [Name]`) from `/dev-workflow:write-plan`.
 
-For a group with tasks 1, 2, 3:
+### 3d. Exit with Native Swarm
 
 ```claude
-# Send ONE message with MULTIPLE Task calls:
-
-Task:
-  subagent_type: general-purpose
-  description: "Execute Task 1"
-  model: sonnet
-  run_in_background: true
-  prompt: |
-    Execute Task 1 from the plan.
-
-    PLAN_FILE: [path]
-    TASK_NUMBER: 1
-
-    Instructions:
-    1. Read task section from plan
-    2. Follow TDD: write failing test, implement, verify pass
-    3. Commit: git add -A && git commit -m "feat(scope): description"
-    4. Return: "TASK 1 COMPLETE" or "TASK 1 FAILED: [reason]"
-
-    Use Skill("dev-workflow:test-driven-development") for implementation.
-
-Task:
-  subagent_type: general-purpose
-  description: "Execute Task 2"
-  model: sonnet
-  run_in_background: true
-  prompt: |
-    Execute Task 2 from the plan.
-    [same structure...]
-
-Task:
-  subagent_type: general-purpose
-  description: "Execute Task 3"
-  model: sonnet
-  run_in_background: true
-  prompt: |
-    Execute Task 3 from the plan.
-    [same structure...]
+ExitPlanMode:
+  launchSwarm: true
+  teammateCount: [GROUP_COUNT, max 5]
 ```
 
-Each Task call returns a `task_id`. Store these for the next step.
+The native swarm:
+- Reads our plan from the plan file
+- Spawns teammates to execute tasks in parallel
+- Each teammate follows the TDD instructions embedded in tasks
+- `SubagentStop` hook fires for each completion → updates state file
 
-#### Wait for Group Completion
+### 3e. After Swarm Completes
 
-**CRITICAL:** Send ALL TaskOutput calls in a SINGLE message to wait concurrently.
-
-```claude
-# Send ONE message with MULTIPLE TaskOutput calls:
-
-TaskOutput:
-  task_id: [task_id_1]
-  block: true
-  timeout: 300000
-
-TaskOutput:
-  task_id: [task_id_2]
-  block: true
-  timeout: 300000
-
-TaskOutput:
-  task_id: [task_id_3]
-  block: true
-  timeout: 300000
-```
-
-All three wait concurrently. Terminal remains responsive.
-
-**Note:** The `SubagentStop` hook automatically updates `current_task` in the state file when each agent completes.
-
-#### Process Results and Continue
-
-After all TaskOutput calls return:
-1. Check results for failures
-2. Mark tasks `completed` in TodoWrite
-3. If more groups remain, continue to next group
-4. If all groups complete, proceed to Post-Completion Actions
+The swarm executes autonomously. When all teammates finish:
+- State file reflects completed task count (via SubagentStop hook)
+- Proceed to Post-Completion Actions
 
 ---
 
