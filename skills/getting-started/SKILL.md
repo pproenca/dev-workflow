@@ -333,8 +333,17 @@ After all tasks complete, the orchestrator must:
    ```claude
    Task:
      subagent_type: dev-workflow:code-reviewer
+     model: opus
+     run_in_background: true
      description: "Review all changes"
      prompt: "Review changes from plan execution. git diff main..HEAD"
+   ```
+
+   Wait for results:
+   ```claude
+   TaskOutput:
+     task_id: <code-reviewer-task-id>
+     block: true
    ```
 
 2. **Process Feedback** - Use `Skill("dev-workflow:receiving-code-review")`

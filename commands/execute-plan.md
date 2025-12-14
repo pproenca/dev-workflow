@@ -229,11 +229,20 @@ Mark "Code Review" `in_progress` in TodoWrite.
 Task:
   subagent_type: dev-workflow:code-reviewer
   model: opus
+  run_in_background: true
   description: "Review all changes"
   prompt: |
     Review all changes from plan execution.
     Run: git diff main..HEAD
     Focus on cross-cutting concerns and consistency.
+```
+
+Wait for results:
+
+```claude
+TaskOutput:
+  task_id: <code-reviewer-task-id>
+  block: true
 ```
 
 Use `Skill("dev-workflow:receiving-code-review")` to process feedback.
