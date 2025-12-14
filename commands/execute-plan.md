@@ -139,7 +139,8 @@ Task tool:
 
     The skill will:
     - Analyze task dependencies → create parallel groups (max 5 tasks each)
-    - Dispatch 3-5 subagents IN PARALLEL per group
+    - Dispatch 3-5 subagents with run_in_background: true (terminal stays responsive)
+    - Use TaskOutput to wait for background tasks to complete
     - Log progress to .claude/dev-workflow-progress.log
     - Write phase summaries between groups
     - Update state after group completes
@@ -349,7 +350,8 @@ Task tool:
 
     The skill will:
     - Analyze task dependencies → create parallel groups (max 5 tasks each)
-    - Dispatch 3-5 subagents IN PARALLEL per group
+    - Dispatch 3-5 subagents with run_in_background: true (terminal stays responsive)
+    - Use TaskOutput to wait for background tasks to complete
     - Log progress to .claude/dev-workflow-progress.log
     - Write phase summaries between groups
     - Update state after group completes

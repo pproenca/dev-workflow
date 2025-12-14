@@ -29,7 +29,8 @@ After loading this skill, execute all steps until "Workflow complete". Only perm
 
 | Pattern | Implementation |
 |---------|----------------|
-| **Parallel dispatch** | 3-5 subagents per group, dispatched in SINGLE Task call |
+| **Background dispatch** | 3-5 subagents per group with `run_in_background: true` |
+| **TaskOutput polling** | Use TaskOutput to wait for background tasks to complete |
 | **Lightweight references** | Subagents write to filesystem, return commit SHA only |
 | **Progress log** | All events logged to `.claude/dev-workflow-progress.log` |
 | **Phase summaries** | Summarize completed work before next group |
@@ -198,15 +199,18 @@ done
 
 Store these ephemeral paths for use in dispatch prompts. Each subagent works in its own worktree.
 
-### 3d. Dispatch Group in Parallel (with Ephemeral Worktrees)
+### 3d. Dispatch Group in Background (with Ephemeral Worktrees)
 
-**CRITICAL: Dispatch ALL tasks in the group in a SINGLE message with multiple Task tool calls.**
+**CRITICAL: Dispatch ALL tasks in a SINGLE message with multiple Task tool calls using `run_in_background: true`.**
 
-For each task in the group, dispatch a subagent with its ephemeral worktree path:
+This keeps the terminal responsive and interruptible while subagents execute in parallel.
+
+For each task in the group, dispatch a background subagent with its ephemeral worktree path:
 
 ````claude
 Task tool:
   model: sonnet
+  run_in_background: true
   prompt: |
     Implement Task [TASK_NUM] of [TOTAL].
 
@@ -265,13 +269,41 @@ Task tool:
 **Parallel dispatch example for group with tasks 1,2,3:**
 
 ```
-Send SINGLE message with THREE Task tool calls:
-- Task tool for Task 1 (sonnet) → EPHEMERAL_TASK_1 path
-- Task tool for Task 2 (sonnet) → EPHEMERAL_TASK_2 path
-- Task tool for Task 3 (sonnet) → EPHEMERAL_TASK_3 path
+Send SINGLE message with THREE Task tool calls (all with run_in_background: true):
+- Task tool for Task 1 (sonnet, background) → returns task_id_1
+- Task tool for Task 2 (sonnet, background) → returns task_id_2
+- Task tool for Task 3 (sonnet, background) → returns task_id_3
 
-All three execute concurrently in isolated worktrees. Wait for all to complete.
+All three start concurrently. Terminal remains responsive (ctrl+c works).
 ```
+
+**Store the returned task_ids** for use in the next step.
+
+### 3d-wait. Wait for Background Tasks to Complete
+
+**Use TaskOutput to wait for each background task to complete.**
+
+For each task_id returned from 3d, call TaskOutput to block until that task finishes:
+
+````claude
+TaskOutput:
+  task_id: [task_id from dispatch]
+  block: true
+  timeout: 300000  # 5 minutes per task
+````
+
+**Wait for ALL tasks in the group before proceeding:**
+
+```
+For group with tasks 1,2,3:
+1. TaskOutput(task_id_1, block=true) → wait for Task 1
+2. TaskOutput(task_id_2, block=true) → wait for Task 2
+3. TaskOutput(task_id_3, block=true) → wait for Task 3
+
+All three have completed. Proceed to 3e (Process Group Results).
+```
+
+**Note:** You can call multiple TaskOutput tools in a single message to wait in parallel, or call them sequentially. The subagents are already running in the background regardless.
 
 ### 3e. Process Group Results
 
