@@ -501,3 +501,132 @@ EOF
 
   [[ "$status" -eq 1 ]]
 }
+
+# ============================================================================
+# get_task_files() tests
+# ============================================================================
+
+@test "get_task_files: extracts files from task section" {
+  cat > "$TEST_DIR/plan.md" << 'EOF'
+### Task 1: Create user model
+
+**Files:**
+- Create: `src/models/user.py`
+- Test: `tests/test_user.py`
+
+### Task 2: Next task
+EOF
+
+  result=$(get_task_files "$TEST_DIR/plan.md" "1")
+  echo "$result" | grep -q "src/models/user.py"
+  echo "$result" | grep -q "tests/test_user.py"
+}
+
+@test "get_task_files: handles Modify files" {
+  cat > "$TEST_DIR/plan.md" << 'EOF'
+### Task 1: Update config
+
+**Files:**
+- Modify: `src/config.py:10-20`
+- Test: `tests/test_config.py`
+
+### Task 2: Next task
+EOF
+
+  result=$(get_task_files "$TEST_DIR/plan.md" "1")
+  echo "$result" | grep -q "src/config.py:10-20"
+}
+
+@test "get_task_files: returns empty for task with no files" {
+  cat > "$TEST_DIR/plan.md" << 'EOF'
+### Task 1: Documentation only
+
+Just update README.
+
+### Task 2: Next task
+EOF
+
+  result=$(get_task_files "$TEST_DIR/plan.md" "1")
+  [[ -z "$result" ]]
+}
+
+# ============================================================================
+# group_tasks_by_dependency() tests
+# ============================================================================
+
+@test "group_tasks_by_dependency: independent tasks in same group" {
+  cat > "$TEST_DIR/plan.md" << 'EOF'
+### Task 1: User model
+
+**Files:**
+- Create: `src/user.py`
+- Test: `tests/test_user.py`
+
+### Task 2: Product model
+
+**Files:**
+- Create: `src/product.py`
+- Test: `tests/test_product.py`
+
+### Task 3: Order model
+
+**Files:**
+- Create: `src/order.py`
+- Test: `tests/test_order.py`
+EOF
+
+  result=$(group_tasks_by_dependency "$TEST_DIR/plan.md" "3" "5")
+  # All three tasks should be in one group (no overlap)
+  [[ "$result" == "group1:1,2,3" ]]
+}
+
+@test "group_tasks_by_dependency: overlapping tasks in different groups" {
+  cat > "$TEST_DIR/plan.md" << 'EOF'
+### Task 1: Create base
+
+**Files:**
+- Create: `src/base.py`
+
+### Task 2: Extend base
+
+**Files:**
+- Modify: `src/base.py`
+- Create: `src/extended.py`
+
+### Task 3: Independent
+
+**Files:**
+- Create: `src/other.py`
+EOF
+
+  result=$(group_tasks_by_dependency "$TEST_DIR/plan.md" "3" "5")
+  # Task 1 and 2 overlap on src/base.py, so should be in different groups
+  echo "$result" | grep -q "group1:1"
+  echo "$result" | grep -q "group2:2"
+}
+
+@test "group_tasks_by_dependency: respects max group size" {
+  cat > "$TEST_DIR/plan.md" << 'EOF'
+### Task 1: A
+**Files:**
+- Create: `a.py`
+
+### Task 2: B
+**Files:**
+- Create: `b.py`
+
+### Task 3: C
+**Files:**
+- Create: `c.py`
+
+### Task 4: D
+**Files:**
+- Create: `d.py`
+EOF
+
+  # Max group size of 2
+  result=$(group_tasks_by_dependency "$TEST_DIR/plan.md" "4" "2")
+  # Should split into two groups of 2
+  echo "$result" | grep -q "group1:1,2"
+  echo "$result" | grep -q "group2:3,4"
+}

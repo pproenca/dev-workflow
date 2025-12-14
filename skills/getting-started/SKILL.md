@@ -88,44 +88,46 @@ See `references/skill-integration.md` for decision tree and skill chains.
 
 ## Planning Workflows
 
-Two planning workflows are available:
-
-| Workflow | When to Use |
-|----------|-------------|
-| **Plugin Commands** (Recommended) | Full features, plans persist to `docs/plans/` |
-| **Native Plan Mode** | Quick iterations, ephemeral plans |
-
-### Plugin Commands Flow (Recommended)
+### Recommended Flow: Plugin Commands
 
 ```
 /dev-workflow:brainstorm → /dev-workflow:write-plan → /dev-workflow:execute-plan
 ```
 
-- Plans saved to `docs/plans/YYYY-MM-DD-<feature>.md`
-- Orchestrated execution with progress tracking
-- Automatic post-completion actions (code review, finish branch)
-- Resume capability if session ends
+| Feature | Benefit |
+|---------|---------|
+| Plans persist to `docs/plans/` | Version controlled, reviewable |
+| Parallel execution via `Task(run_in_background)` | Native background agents with concurrent `TaskOutput` wait |
+| Task grouping by file overlap | No conflicts, maximum parallelism |
+| Automatic post-completion | Code review + finish branch enforced |
+| Resume capability | `SubagentStop` hook tracks progress |
 
-### Native Plan Mode Flow
+### When to Use Native `EnterPlanMode`
+
+Use `EnterPlanMode` directly (without plugin commands) ONLY when:
+- You're in a conversation and want Claude to write a plan interactively
+- The plan is simple (1-3 tasks) and doesn't need to persist
+- You want Claude's native planning UX
+
+**Important:** `ExitPlanMode(launchSwarm: true)` reads from Claude's internal plan file, NOT from `docs/plans/`. It's designed for plans Claude just wrote in plan mode.
+
+### Parallel Execution: How It Works
+
+The `/dev-workflow:execute-plan` command uses native Claude Code patterns:
 
 ```
-EnterPlanMode → ExitPlanMode(launchSwarm: true)
+# 1. Dispatch group with MULTIPLE Task calls in ONE message:
+Task(run_in_background: true, prompt: "Execute Task 1...")
+Task(run_in_background: true, prompt: "Execute Task 2...")
+Task(run_in_background: true, prompt: "Execute Task 3...")
+
+# 2. Wait concurrently with MULTIPLE TaskOutput calls in ONE message:
+TaskOutput(task_id: id1, block: true)
+TaskOutput(task_id: id2, block: true)
+TaskOutput(task_id: id3, block: true)
 ```
 
-- Plans saved to `.claude/plans/` (ephemeral)
-- Faster for simple features
-- Manual post-swarm actions required
-
-**Choose Plugin Commands when:**
-- Plan should be version controlled
-- Feature has 5+ tasks
-- You want orchestrated parallel execution
-- Resume capability is important
-
-**Choose Native Plan Mode when:**
-- Quick prototyping
-- Simple 1-3 task features
-- Plan doesn't need to persist
+This is the native pattern for parallel agents. The `SubagentStop` hook fires when each agent completes, updating the state file automatically.
 
 ---
 

@@ -94,3 +94,75 @@ delete_state_file() {
   state_file=$(get_state_file) || return 1
   rm -f "$state_file"
 }
+
+# Extract file paths from a task section
+# Usage: get_task_files <plan_file> <task_num>
+# Returns: List of file paths (one per line)
+get_task_files() {
+  local plan_file="$1"
+  local task_num="$2"
+  local next_task=$((task_num + 1))
+
+  # Extract task section and find file paths in backticks after Create/Modify/Test:
+  # shellcheck disable=SC2016 # Backtick regex is intentional - matching literal backticks
+  awk "/^### Task ${task_num}:/,/^### Task ${next_task}:|^## /" "$plan_file" | \
+    grep -E '(Create|Modify|Test):' | \
+    grep -oE '`[^`]+`' | tr -d '`' | sort -u
+}
+
+# Group tasks by file dependencies for parallel execution
+# Usage: group_tasks_by_dependency <plan_file> <total_tasks> [max_group_size]
+# Output: group1:1,2,3|group2:4,5|group3:6,7,8,9
+# Tasks within a group have NO file overlap (can run in parallel)
+# Groups execute serially (group 1 completes before group 2)
+group_tasks_by_dependency() {
+  local plan_file="$1"
+  local total_tasks="$2"
+  local max_group="${3:-5}"  # Default max 5 per group (Anthropic pattern)
+
+  local groups=""
+  local current_group=""
+  local current_group_files=""
+  local group_count=0
+  local group_num=1
+
+  for ((i=1; i<=total_tasks; i++)); do
+    local task_files
+    task_files=$(get_task_files "$plan_file" "$i")
+
+    # Check if task overlaps with current group
+    local has_overlap=false
+    if [[ -n "$current_group_files" ]] && [[ -n "$task_files" ]]; then
+      local common
+      common=$(comm -12 <(echo "$current_group_files" | sort) <(echo "$task_files" | sort) 2>/dev/null)
+      [[ -n "$common" ]] && has_overlap=true
+    fi
+
+    # Start new group if: overlap, or group full
+    if [[ "$has_overlap" == "true" ]] || [[ "$group_count" -ge "$max_group" ]]; then
+      # Save current group
+      if [[ -n "$current_group" ]]; then
+        [[ -n "$groups" ]] && groups="${groups}|"
+        groups="${groups}group${group_num}:${current_group}"
+        ((group_num++))
+      fi
+      # Start new group with this task
+      current_group="$i"
+      current_group_files="$task_files"
+      group_count=1
+    else
+      # Add to current group
+      [[ -n "$current_group" ]] && current_group="${current_group},$i" || current_group="$i"
+      current_group_files="${current_group_files}"$'\n'"${task_files}"
+      ((group_count++))
+    fi
+  done
+
+  # Save last group
+  if [[ -n "$current_group" ]]; then
+    [[ -n "$groups" ]] && groups="${groups}|"
+    groups="${groups}group${group_num}:${current_group}"
+  fi
+
+  echo "$groups"
+}

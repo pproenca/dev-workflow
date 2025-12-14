@@ -61,19 +61,19 @@ AskUserQuestion:
   question: "How should tasks be executed?"
   multiSelect: false
   options:
-    - label: "Sequential (Recommended)"
+    - label: "Sequential"
       description: "Execute tasks one by one with full TDD cycle"
-    - label: "Parallel via swarm"
-      description: "Use native swarm for independent tasks"
+    - label: "Parallel (Recommended)"
+      description: "Run independent tasks concurrently via background agents"
 ```
 
 ---
 
 ## Sequential Execution
 
-### For Each Task:
+For each task in order:
 
-**3a. Mark in_progress:**
+### 3a. Read and Execute Task
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
@@ -85,103 +85,163 @@ echo "EXECUTING: Task $NEXT"
 
 Mark task `in_progress` in TodoWrite.
 
-**3b. Read Task Content:**
+Extract task section from plan. Use `Skill("dev-workflow:test-driven-development")` to implement.
 
-Extract task section from plan and read it.
-
-**3c. Execute with TDD:**
-
-Use `Skill("dev-workflow:test-driven-development")` to implement.
-
-Follow the TDD cycle embedded in the task:
-1. Write failing test
-2. Run test, verify FAIL
-3. Implement minimal code
-4. Run test, verify PASS
-5. Commit
-
-**3d. Update State:**
+### 3b. Update State After Each Task
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 STATE_FILE="$(get_state_file)"
 CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
-NEXT=$((CURRENT + 1))
-frontmatter_set "$STATE_FILE" "current_task" "$NEXT"
-echo "COMPLETED: Task $CURRENT, now at $NEXT"
+frontmatter_set "$STATE_FILE" "current_task" "$((CURRENT + 1))"
 ```
 
-Mark task `completed` in TodoWrite.
-
-**3e. Continue to Next Task**
-
-Repeat until all tasks complete.
+Mark task `completed` in TodoWrite. Continue to next task.
 
 ---
 
-## Parallel via Swarm
+## Parallel Execution
 
-**3a. Analyze Parallel Groups:**
+Uses native `Task(run_in_background: true)` + `TaskOutput` pattern for concurrent agents.
 
-Read plan and identify tasks that can run in parallel (no file overlap).
+### 3a. Analyze Task Groups
 
-**3b. Enter Plan Mode:**
+Identify tasks that can run in parallel (no file overlap):
 
-Use `EnterPlanMode` to prepare for swarm execution.
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+PLAN_FILE="$ARGUMENTS"
+TOTAL=$(frontmatter_get "$(get_state_file)" "total_tasks" "0")
 
-**3c. Adapt Plan for Swarm:**
-
-Write the plan content to the native plan file location. The plan is already in the correct format.
-
-**3d. Launch Swarm:**
-
-Calculate teammateCount from parallel groups:
-- 1-2 groups: 2 teammates
-- 3-4 groups: 3-4 teammates
-- 5+ groups: 5 teammates (max)
-
-```claude
-ExitPlanMode:
-  launchSwarm: true
-  teammateCount: [calculated]
+# Group tasks by file dependencies (max 5 per group)
+GROUPS=$(group_tasks_by_dependency "$PLAN_FILE" "$TOTAL" 5)
+echo "PARALLEL_GROUPS: $GROUPS"
+# Format: group1:1,2,3|group2:4,5|group3:6,7,8
 ```
 
-**3e. Wait for Swarm Completion:**
+### 3b. Execute Each Group
 
-The swarm executes. `SubagentStop` hook updates `current_task` automatically.
+For each group, execute tasks in parallel:
 
-**3f. Proceed to Post-Swarm Actions**
+#### Extract Tasks for Current Group
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+STATE_FILE="$(get_state_file)"
+CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+PLAN_FILE=$(frontmatter_get "$STATE_FILE" "plan" "")
+
+# Find next group to execute
+# ... parse GROUPS to find tasks after CURRENT
+```
+
+#### Dispatch Group with Background Agents
+
+**CRITICAL:** Send ALL Task calls for the group in a SINGLE message. This enables true parallel execution.
+
+For a group with tasks 1, 2, 3:
+
+```claude
+# Send ONE message with MULTIPLE Task calls:
+
+Task:
+  subagent_type: general-purpose
+  description: "Execute Task 1"
+  model: sonnet
+  run_in_background: true
+  prompt: |
+    Execute Task 1 from the plan.
+
+    PLAN_FILE: [path]
+    TASK_NUMBER: 1
+
+    Instructions:
+    1. Read task section from plan
+    2. Follow TDD: write failing test, implement, verify pass
+    3. Commit: git add -A && git commit -m "feat(scope): description"
+    4. Return: "TASK 1 COMPLETE" or "TASK 1 FAILED: [reason]"
+
+    Use Skill("dev-workflow:test-driven-development") for implementation.
+
+Task:
+  subagent_type: general-purpose
+  description: "Execute Task 2"
+  model: sonnet
+  run_in_background: true
+  prompt: |
+    Execute Task 2 from the plan.
+    [same structure...]
+
+Task:
+  subagent_type: general-purpose
+  description: "Execute Task 3"
+  model: sonnet
+  run_in_background: true
+  prompt: |
+    Execute Task 3 from the plan.
+    [same structure...]
+```
+
+Each Task call returns a `task_id`. Store these for the next step.
+
+#### Wait for Group Completion
+
+**CRITICAL:** Send ALL TaskOutput calls in a SINGLE message to wait concurrently.
+
+```claude
+# Send ONE message with MULTIPLE TaskOutput calls:
+
+TaskOutput:
+  task_id: [task_id_1]
+  block: true
+  timeout: 300000
+
+TaskOutput:
+  task_id: [task_id_2]
+  block: true
+  timeout: 300000
+
+TaskOutput:
+  task_id: [task_id_3]
+  block: true
+  timeout: 300000
+```
+
+All three wait concurrently. Terminal remains responsive.
+
+**Note:** The `SubagentStop` hook automatically updates `current_task` in the state file when each agent completes.
+
+#### Process Results and Continue
+
+After all TaskOutput calls return:
+1. Check results for failures
+2. Mark tasks `completed` in TodoWrite
+3. If more groups remain, continue to next group
+4. If all groups complete, proceed to Post-Completion Actions
 
 ---
 
 ## Step 4: Post-Completion Actions (MANDATORY)
 
-After ALL tasks complete, these steps are REQUIRED:
+After ALL tasks complete:
 
 ### 4a. Code Review
 
 Mark "Code Review" `in_progress` in TodoWrite.
 
-Dispatch code-reviewer:
-
 ```claude
 Task:
   subagent_type: dev-workflow:code-reviewer
-  description: "Review plan changes"
+  description: "Review all changes"
   prompt: |
     Review all changes from plan execution.
-
-    git diff main..HEAD
-
-    Focus on:
-    - Cross-cutting concerns
-    - Consistency across tasks
-    - Test coverage
+    Run: git diff main..HEAD
+    Focus on cross-cutting concerns and consistency.
 ```
 
 Use `Skill("dev-workflow:receiving-code-review")` to process feedback.
 
-Mark "Code Review" `completed` in TodoWrite.
+Mark "Code Review" `completed`.
 
 ### 4b. Finish Branch
 
@@ -189,7 +249,7 @@ Mark "Finish Branch" `in_progress` in TodoWrite.
 
 Use `Skill("dev-workflow:finishing-a-development-branch")`.
 
-Mark "Finish Branch" `completed` in TodoWrite.
+Mark "Finish Branch" `completed`.
 
 ### 4c. Cleanup State
 
@@ -203,29 +263,27 @@ echo "Workflow complete. State file deleted."
 
 ## Blocker Handling
 
-If implementation hits a blocker:
+If a task fails:
 
 ```claude
 AskUserQuestion:
   header: "Blocker"
-  question: "Task $N blocked: [description]. What to do?"
+  question: "Task N failed. What to do?"
   multiSelect: false
   options:
     - label: "Skip"
-      description: "Mark incomplete, continue to next task"
+      description: "Continue to next task"
     - label: "Retry"
-      description: "Provide guidance to resolve"
+      description: "Re-run the failed task"
     - label: "Stop"
-      description: "Pause workflow, resume later"
+      description: "Pause workflow, resume later with /dev-workflow:resume"
 ```
-
-**If Stop:** State file preserved. Resume with `/dev-workflow:resume`.
 
 ---
 
 ## Resume Capability
 
-If session ends unexpectedly, next session will detect state file and prompt:
+If session ends unexpectedly, next session detects state file:
 
 ```
 ACTIVE WORKFLOW DETECTED
