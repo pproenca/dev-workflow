@@ -8,6 +8,10 @@ allowed-tools: Read, Write, Bash, TodoWrite, Task, Skill, AskUserQuestion
 
 Execute implementation plan with state tracking and mandatory post-completion actions.
 
+**Model Requirements:**
+- Orchestrator (this command): **Opus 4.5** - handles planning decisions, state management, coordination
+- Task execution agents: **Sonnet** - handles individual task implementation (TDD cycles)
+
 ## Input
 
 $ARGUMENTS
@@ -134,6 +138,7 @@ For each group in `TASK_GROUPS` (split by `|`):
 # Launch in SINGLE message for true parallelism
 Task:
   subagent_type: general-purpose
+  model: sonnet
   description: "Execute Task 1"
   prompt: |
     Execute Task 1 from plan. Follow TDD instructions exactly.
@@ -142,6 +147,7 @@ Task:
 
 Task:
   subagent_type: general-purpose
+  model: sonnet
   description: "Execute Task 2"
   prompt: |
     Execute Task 2 from plan. Follow TDD instructions exactly.
@@ -180,6 +186,7 @@ Execute foreground (no background needed):
 ```claude
 Task:
   subagent_type: general-purpose
+  model: sonnet
   description: "Execute Task 5"
   prompt: |
     Execute Task 5 from plan. Follow TDD instructions exactly.
@@ -223,6 +230,7 @@ Mark "Code Review" `in_progress` in TodoWrite.
 ```claude
 Task:
   subagent_type: dev-workflow:code-reviewer
+  model: opus
   description: "Review all changes"
   prompt: |
     Review all changes from plan execution.
