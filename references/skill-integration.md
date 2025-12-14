@@ -2,94 +2,29 @@
 
 How skills work together in the development workflow.
 
-## Concurrency Model
-
-### Worktree Isolation
-
-State files are worktree-scoped. Each worktree has its own `.claude/` directory.
+## Native Planning Flow
 
 ```text
-main-repo/
-├── .claude/
-│   └── (no state files - main repo)
-└── ...
-
-../worktrees/feature-auth/
-├── .claude/
-│   └── dev-workflow-state.local.md  ← Session A state
-└── ...
-
-../worktrees/feature-api/
-├── .claude/
-│   └── dev-workflow-state.local.md  ← Session B state
-└── ...
-```
-
-### State Files
-
-| Workflow                    | State File                           | Scope    |
-| --------------------------- | ------------------------------------ | -------- |
-| /dev-workflow:execute-plan  | `.claude/dev-workflow-state.local.md` | Worktree |
-| dev-workflow:subagent-driven-development | `.claude/dev-workflow-state.local.md` | Worktree |
-
-### Parallel Execution Rules
-
-**Safe:** Multiple terminals in different worktrees
-**Unsafe:** Multiple terminals in same worktree
-
-Before parallel execution:
-
-1. Load using-git-worktrees: `Skill("dev-workflow:using-git-worktrees")`
-2. Create worktree for each parallel execution
-3. Each session works in its own worktree
-
-## Execution Workflows
-
-### /dev-workflow:write-plan → dev-workflow:subagent-driven-development
-
-```text
-/dev-workflow:write-plan
+/dev-workflow:brainstorm (optional)
     │
-    ├─ Step 2: Task tool (dev-workflow:code-explorer)
-    ├─ Step 4: Task tool (dev-workflow:code-architect)
-    │           └─ Uses: dev-workflow:pragmatic-architecture skill
-    ├─ Step 5: Save plan
+    ▼
+EnterPlanMode
     │
-    └─ Step 6: "Execute now" selected
-           │
-           ▼
-    Skill("dev-workflow:subagent-driven-development")
-           │
-           ├─ Step 1: Initialize (state file, TodoWrite)
-           ├─ Step 2: Analyze dependencies
-           ├─ Step 3: Execute tasks (Task tool per task)
-           ├─ Step 4: Final Code Review
-           │     ├─ Task tool (dev-workflow:code-reviewer)
-           │     │   └─ Uses: dev-workflow:pragmatic-architecture skill
-           │     └─ Skill("dev-workflow:receiving-code-review")
-           └─ Step 5: Finish Branch
-                 └─ Skill("dev-workflow:finishing-a-development-branch")
-```
-
-### /dev-workflow:write-plan → /dev-workflow:execute-plan
-
-```text
-/dev-workflow:write-plan
+    ├── Explore codebase (native Explore agent)
+    ├── Design with dev-workflow:pragmatic-architecture principles
+    ├── Write plan with TDD tasks
     │
-    └─ Step 6: "Batch execution" selected
-           │
-           ▼ (new session)
-    /dev-workflow:execute-plan
-           │
-           ├─ Step 1: Initialize (state file, TodoWrite)
-           ├─ Steps 2-5: Execute batches with checkpoints
-           │     └─ AskUserQuestion between batches
-           ├─ Step 6: Final Code Review
-           │     ├─ Task tool (dev-workflow:code-reviewer)
-           │     │   └─ Uses: dev-workflow:pragmatic-architecture skill
-           │     └─ Skill("dev-workflow:receiving-code-review")
-           └─ Step 7: Complete
-                 └─ Skill("dev-workflow:finishing-a-development-branch")
+    ▼
+ExitPlanMode(launchSwarm: true, teammateCount: 3-5)
+    │
+    ├── Teammates execute tasks in parallel
+    │   └── Each task: TDD cycle → commit
+    │
+    ▼
+Post-swarm actions (main session):
+    ├── Task(dev-workflow:code-reviewer)
+    ├── Skill("dev-workflow:receiving-code-review")
+    └── Skill("dev-workflow:finishing-a-development-branch")
 ```
 
 ## Code Review Flow
@@ -156,7 +91,7 @@ USER REQUEST
     ├── "Plan/design/brainstorm" ──────────► /dev-workflow:brainstorm command
     │                                              │
     │                                              ▼
-    │                                        using-git-worktrees
+    │                                        EnterPlanMode
     │
     ├── "Design/architect/structure" ──────► dev-workflow:pragmatic-architecture
     │       │                                (via code-architect agent)
@@ -189,14 +124,6 @@ USER REQUEST
 
 ## Skill Categories
 
-### Workflow Skills (pipeline steps)
-
-| Skill                              | When                  | What It Does              |
-| ---------------------------------- | --------------------- | ------------------------- |
-| /dev-workflow:brainstorm (command) | Planning phase        | Refine idea to design     |
-| using-git-worktrees                | Before implementation | Create isolated workspace |
-| dev-workflow:finishing-a-development-branch     | After all tasks       | Clean merge to main       |
-
 ### Architecture Skills (design quality)
 
 | Skill                  | When                      | What It Does                        |
@@ -210,7 +137,6 @@ USER REQUEST
 | --------------------------- | ------------------------- | ----------------------------------- |
 | TDD                         | Any implementation        | Write test → Fail → Pass → Refactor |
 | dev-workflow:systematic-debugging        | Investigation             | Find root cause before fixing       |
-| dev-workflow:subagent-driven-development | Execute plan this session | Task tool per task, final review    |
 
 ### Quality Skills (ensure correctness)
 
@@ -280,48 +206,19 @@ dev-workflow:defense-in-depth is about **adding safety layers**.
 
 ## Skill Chains
 
-### Feature Implementation (autonomous)
+### Feature Implementation
 
 ```text
-/dev-workflow:brainstorm (command)
+/dev-workflow:brainstorm (optional)
     │
     ▼
-using-git-worktrees
-    │
-    ▼
-/dev-workflow:write-plan
+EnterPlanMode
     │   └─ code-architect uses dev-workflow:pragmatic-architecture
     │
-    ▼ (Step 6: "Execute now")
-Skill("dev-workflow:subagent-driven-development")
-    │
-    ├─ TDD (each task via Task tool)
-    │
-    ├─ Task tool (dev-workflow:code-reviewer)
-    │   ├─ Uses: dev-workflow:testing-anti-patterns
-    │   ├─ Uses: dev-workflow:pragmatic-architecture
-    │   └─ Skill("dev-workflow:receiving-code-review")
-    │
-    └─ Skill("dev-workflow:finishing-a-development-branch")
-```
-
-### Feature Implementation (checkpoints)
-
-```text
-/dev-workflow:brainstorm (command)
-    │
     ▼
-using-git-worktrees
+ExitPlanMode(launchSwarm: true)
     │
-    ▼
-/dev-workflow:write-plan
-    │   └─ code-architect uses dev-workflow:pragmatic-architecture
-    │
-    ▼ (Step 6: "Batch execution")
-/dev-workflow:execute-plan (new session)
-    │
-    ├─ TDD (each task)
-    ├─ AskUserQuestion (each batch)
+    ├─ TDD (each task via swarm teammates)
     │
     ├─ Task tool (dev-workflow:code-reviewer)
     │   ├─ Uses: dev-workflow:testing-anti-patterns

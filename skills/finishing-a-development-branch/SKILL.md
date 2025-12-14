@@ -1,7 +1,7 @@
 ---
 name: finishing-a-development-branch
 description: Guide completion of development work by presenting merge/PR options. Use when "I'm done", "merge this", "create PR", "finish up", or when implementation is complete and tests pass.
-allowed-tools: Read, Bash, Grep, Glob, AskUserQuestion
+allowed-tools: Read, Bash, AskUserQuestion
 ---
 
 # Finishing a Development Branch
@@ -13,9 +13,8 @@ Guide completion of development work by presenting clear options.
 After code review passes, tests pass, work is ready to integrate.
 
 **Invoked by:**
-- `execute-plan` Step 7
-- `subagent-driven-development` Step 5
-- Direct user request
+- Post-swarm actions (after ExitPlanMode completes)
+- Direct user request ("I'm done", "merge this", "create PR")
 
 ## Step 1: Verify Tests
 
@@ -148,17 +147,7 @@ if [[ "$WORKTREE_PATH" != "$MAIN_REPO" ]]; then
 fi
 ```
 
-## Step 6: Cleanup State
-
-Remove workflow state files:
-
-```bash
-source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
-STATE_FILE="$(get_state_file)"
-HANDOFF_FILE="$(get_handoff_file)"
-rm -f "$STATE_FILE"
-rm -f "$HANDOFF_FILE"
-```
+## Step 6: Report Completion
 
 Report:
 
@@ -167,7 +156,6 @@ Branch finished:
 - Action: [Merged / PR created / Discarded]
 - Branch: [name]
 - Worktree: [cleaned up / preserved]
-- State: cleared
 ```
 
 Return to caller.

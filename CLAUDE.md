@@ -19,19 +19,20 @@ Tests run on commit via pre-commit hook.
 
 ## Architecture
 
-**Plugin flow:**
+**Plugin flow (native tools):**
 ```text
-/dev-workflow:brainstorm → /dev-workflow:write-plan → execute
-                                                       ├─ "Execute now" → subagent-driven-development
-                                                       └─ "Batch execution" → /dev-workflow:execute-plan
+/dev-workflow:brainstorm (optional) → EnterPlanMode → ExitPlanMode(launchSwarm: true)
+                                           ↓
+                              SessionStart injects methodology:
+                              - TDD task structure
+                              - Pragmatic architecture
+                              - Parallel grouping
+                              - Post-swarm actions (code review, finish branch)
 ```
 
 **Hooks** (`hooks/hooks.json`):
-- `SessionStart` → loads getting-started skill
-- `Stop` → warns on incomplete workflow
-- `SubagentStop` → verifies commit after task
-
-**State**: Workflows persist to `.claude/dev-workflow-state.local.md` (worktree-scoped). See `references/state-format.md`.
+- `SessionStart` → loads getting-started skill with planning methodology
+- `PostPlanModeExit` → reminds of post-swarm actions (code review, finish branch)
 
 **Helper functions**: `scripts/hook-helpers.sh` provides `frontmatter_get`/`frontmatter_set` for safe YAML parsing.
 
@@ -80,20 +81,19 @@ Skills with checklists require TodoWrite tracking.
 ## Directory Structure
 
 ```text
-hooks/           # Event handlers (SessionStart, Stop, SubagentStop)
+hooks/           # Event handlers (SessionStart)
 scripts/         # Validation, setup, helpers
 skills/          # SKILL.md per skill with optional references/
 commands/        # Slash commands (/dev-workflow:*)
 agents/          # Subagent definitions
-references/      # Shared docs (state-format, skill-integration)
+references/      # Shared docs (skill-integration, planning-philosophy)
 tests/           # Bats tests for hooks and scripts
 ```
 
 ## References
 
 - `references/skill-integration.md` — Decision trees, skill chains, trigger patterns
-- `references/state-format.md` — State file format, helper functions
-- `references/planning-philosophy.md` — Planning approach
+- `references/planning-philosophy.md` — Task granularity, file organization, TDD cycles
 
 ## Dependencies
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Worktree management utilities - simplified version
-# No external dependencies (yq, jq) required
+# Worktree management utilities
+# No external dependencies required
 
 # Get repo root
 get_repo_root() {
@@ -20,11 +20,11 @@ is_main_repo() {
   [[ "$current" == "$main" ]]
 }
 
-# Generate worktree name from plan file
+# Generate worktree name from description
 generate_worktree_name() {
-  local plan_file="$1"
+  local description="$1"
   local base_name timestamp
-  base_name="$(basename "$plan_file" .md)"
+  base_name="$(echo "$description" | tr ' ' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c1-30)"
   timestamp="$(date +%Y%m%d-%H%M%S)"
   echo "${base_name}-${timestamp}"
 }
@@ -47,26 +47,6 @@ create_worktree() {
   git worktree add "$worktree_path" -b "$branch_name" HEAD >&2
 
   echo "$worktree_path"
-}
-
-# Create handoff state file - MINIMAL FORMAT
-# Usage: create_handoff_state <plan_path> <worktree_path> <mode>
-create_handoff_state() {
-  local plan_file="$1"
-  local worktree_path="$2"
-  local exec_mode="${3:-sequential}"
-
-  mkdir -p "${worktree_path}/.claude"
-
-  # Minimal handoff state - just frontmatter
-  cat > "${worktree_path}/.claude/pending-handoff.local.md" << EOF
----
-plan: ${plan_file}
-mode: ${exec_mode}
----
-EOF
-
-  echo "${worktree_path}/.claude/pending-handoff.local.md"
 }
 
 # List worktrees
@@ -132,269 +112,6 @@ cleanup_all_worktrees() {
   fi
 }
 
-# Create worktree + handoff state in one call (DEPRECATED - use setup_worktree_with_state)
-# Usage: setup_worktree_with_handoff <plan_file> [mode]
-# Returns: worktree path
-setup_worktree_with_handoff() {
-  local plan_file="$1"
-  local mode="${2:-pending}"
-
-  local plan_abs worktree_name worktree_path
-  plan_abs="$(realpath "$plan_file")"
-  worktree_name="$(generate_worktree_name "$plan_file")"
-  worktree_path="$(create_worktree "$worktree_name")"
-
-  create_handoff_state "$plan_abs" "$worktree_path" "$mode"
-
-  echo "$worktree_path"
-}
-
-# Create worktree + full state file in one call
-# Usage: setup_worktree_with_state <plan_file> <workflow_type>
-# workflow_type: "execute-plan" | "subagent"
-# Returns: worktree path
-# Outputs to stderr: STATE_FILE path
-# Exits with error if plan has no tasks
-setup_worktree_with_state() {
-  local plan_file="$1"
-  local workflow_type="${2:-execute-plan}"
-
-  local plan_abs worktree_name worktree_path total_tasks base_sha state_file
-  plan_abs="$(realpath "$plan_file")"
-
-  # Validate plan has tasks before creating worktree
-  total_tasks=$(grep -c "^### Task [0-9]\+:" "$plan_abs" 2>/dev/null || true)
-  total_tasks="${total_tasks:-0}"
-  if [[ "$total_tasks" -eq 0 ]]; then
-    echo "ERROR: No tasks found in plan file: $plan_abs" >&2
-    echo "Expected format: '### Task N: Description'" >&2
-    return 1
-  fi
-
-  local repo_root main_repo_path
-  repo_root="$(get_repo_root)"
-  if is_main_repo; then
-    base_sha=$(git rev-parse HEAD)
-  else
-    main_repo_path="$(get_main_worktree)"
-    base_sha=$(cd "$main_repo_path" && git rev-parse HEAD)
-  fi
-
-  worktree_name="$(generate_worktree_name "$plan_file")"
-  worktree_path="$(create_worktree "$worktree_name")"
-  state_file="${worktree_path}/.claude/dev-workflow-state.local.md"
-
-  mkdir -p "${worktree_path}/.claude"
-  mkdir -p "${worktree_path}/.claude/task-outputs"
-  touch "${worktree_path}/.claude/dev-workflow-progress.log"
-  cat > "$state_file" << EOF
----
-workflow: ${workflow_type}
-worktree: ${worktree_path}
-plan: ${plan_abs}
-base_sha: ${base_sha}
-current_task: 0
-total_tasks: ${total_tasks}
-last_commit: ${base_sha}
-batch_size: 5
-parallel_mode: true
-retry_count: 0
-failed_tasks: ""
-enabled: true
----
-
-Initialized from ${workflow_type}
-EOF
-
-  # Log initialization (cd to worktree for correct git root detection)
-  # shellcheck source=scripts/hook-helpers.sh
-  source "${BASH_SOURCE%/*}/hook-helpers.sh"
-  (cd "$worktree_path" && log_progress "PLAN" "Initialized ${workflow_type} with ${total_tasks} tasks")
-
-  # Output state file path to stderr for capture
-  echo "STATE_FILE:${state_file}" >&2
-  echo "TOTAL_TASKS:${total_tasks}" >&2
-
-  # Return worktree path on stdout
-  echo "$worktree_path"
-}
-
-# Find most recent pending worktree
-# Returns: worktree path or empty
-get_pending_worktree() {
-  local repo_root
-  repo_root="$(get_repo_root)"
-
-  find "${repo_root}/.worktrees" -name "pending-handoff.local.md" -type f 2>/dev/null | \
-    head -1 | \
-    xargs -I{} dirname {} | \
-    xargs -I{} dirname {}
-}
-
-# Update handoff mode atomically
-# Usage: set_handoff_mode <worktree_path> <mode>
-set_handoff_mode() {
-  local worktree="$1"
-  local mode="$2"
-  local handoff_file="${worktree}/.claude/pending-handoff.local.md"
-  local temp="${handoff_file}.tmp.$$"
-
-  sed "s/^mode: .*/mode: $mode/" "$handoff_file" > "$temp"
-  mv "$temp" "$handoff_file"
-}
-
-# Activate worktree for execution - sets mode and returns path
-# Usage: activate_worktree <mode>
-activate_worktree() {
-  local mode="$1"
-  local worktree
-  worktree="$(get_pending_worktree)"
-
-  if [[ -n "$worktree" ]]; then
-    set_handoff_mode "$worktree" "$mode"
-    echo "$worktree"
-  fi
-}
-
-# =============================================================================
-# Ephemeral Worktree Functions (for parallel subagent execution)
-# =============================================================================
-
-# Create ephemeral worktree for a single task in a parallel group
-# Usage: create_ephemeral_worktree <group_num> <task_num>
-# Returns: ephemeral worktree path
-# Note: Creates worktree under main repo's .worktrees/.ephemeral/
-#       but branches from current HEAD (typically execution worktree's HEAD)
-create_ephemeral_worktree() {
-  local group_num="$1"
-  local task_num="$2"
-  local main_repo ephemeral_dir worktree_path branch_name current_head
-
-  current_head="$(git rev-parse HEAD)"
-  main_repo="$(get_main_worktree)"
-  ephemeral_dir="${main_repo}/.worktrees/.ephemeral"
-  worktree_path="${ephemeral_dir}/group-${group_num}-task-${task_num}"
-  branch_name="ephemeral/group-${group_num}-task-${task_num}"
-
-  mkdir -p "$ephemeral_dir"
-
-  # Clean up stale worktree/branch if exists (from crashed previous run)
-  if [[ -d "$worktree_path" ]]; then
-    git worktree remove "$worktree_path" --force 2>/dev/null || rm -rf "$worktree_path"
-    git worktree prune
-  fi
-  if git show-ref --verify --quiet "refs/heads/$branch_name"; then
-    git branch -D "$branch_name" 2>/dev/null || true
-  fi
-
-  git worktree add "$worktree_path" -b "$branch_name" "$current_head" >&2
-
-  echo "$worktree_path"
-}
-
-# Merge all ephemeral worktrees for a group back to execution worktree
-# Usage: merge_ephemeral_group <execution_worktree> <group_num> <task_list>
-# task_list: comma-separated task numbers (e.g., "1,2,3")
-# Returns: 0 on success, 1 on merge conflict
-# Note: Merges in task-number order using --no-ff
-merge_ephemeral_group() {
-  local execution_worktree="$1"
-  local group_num="$2"
-  local task_list="$3"
-  local main_repo ephemeral_dir
-
-  main_repo="$(get_main_worktree)"
-  ephemeral_dir="${main_repo}/.worktrees/.ephemeral"
-
-  # Change to execution worktree for merging
-  cd "$execution_worktree" || return 1
-
-  # Parse task numbers and merge in order
-  IFS=',' read -ra tasks <<< "$task_list"
-  for task_num in "${tasks[@]}"; do
-    local branch_name="ephemeral/group-${group_num}-task-${task_num}"
-
-    # Check if ephemeral branch exists
-    if ! git show-ref --verify --quiet "refs/heads/$branch_name"; then
-      echo "WARN: Branch $branch_name does not exist, skipping" >&2
-      continue
-    fi
-
-    # Check if ephemeral branch has commits beyond merge-base
-    local base_sha ephemeral_head
-    base_sha=$(git merge-base HEAD "$branch_name" 2>/dev/null) || continue
-    ephemeral_head=$(git rev-parse "$branch_name" 2>/dev/null) || continue
-
-    if [[ "$base_sha" == "$ephemeral_head" ]]; then
-      echo "WARN: Task $task_num has no commits, skipping" >&2
-      continue
-    fi
-
-    # Merge with --no-ff --no-edit
-    if ! git merge --no-ff --no-edit -m "merge: task $task_num from ephemeral worktree" "$branch_name"; then
-      echo "ERROR: Merge conflict on task $task_num" >&2
-      git merge --abort
-      return 1
-    fi
-  done
-
-  return 0
-}
-
-# Cleanup ephemeral worktrees and branches for a specific group
-# Usage: cleanup_ephemeral_group <group_num> <task_list>
-cleanup_ephemeral_group() {
-  local group_num="$1"
-  local task_list="$2"
-  local main_repo ephemeral_dir
-
-  main_repo="$(get_main_worktree)"
-  ephemeral_dir="${main_repo}/.worktrees/.ephemeral"
-
-  IFS=',' read -ra tasks <<< "$task_list"
-  for task_num in "${tasks[@]}"; do
-    local worktree_path="${ephemeral_dir}/group-${group_num}-task-${task_num}"
-    local branch_name="ephemeral/group-${group_num}-task-${task_num}"
-
-    # Remove worktree
-    git worktree remove "$worktree_path" --force 2>/dev/null || rm -rf "$worktree_path"
-
-    # Remove branch
-    git branch -D "$branch_name" 2>/dev/null || true
-  done
-
-  # Prune orphaned worktree entries
-  git worktree prune
-
-  # Remove .ephemeral directory if empty
-  rmdir "$ephemeral_dir" 2>/dev/null || true
-}
-
-# Cleanup ALL ephemeral worktrees (recovery function for aborted workflows)
-# Usage: cleanup_all_ephemeral_worktrees
-cleanup_all_ephemeral_worktrees() {
-  local main_repo ephemeral_dir
-
-  main_repo="$(get_main_worktree)"
-  ephemeral_dir="${main_repo}/.worktrees/.ephemeral"
-
-  [[ -d "$ephemeral_dir" ]] || return 0
-
-  # Remove all ephemeral worktrees
-  for wt in "$ephemeral_dir"/group-*-task-*/; do
-    [[ -d "$wt" ]] || continue
-    git worktree remove "$wt" --force 2>/dev/null || rm -rf "$wt"
-  done
-
-  # Remove all ephemeral branches
-  git branch --list "ephemeral/*" | while read -r branch; do
-    git branch -D "${branch#  }" 2>/dev/null || true
-  done
-
-  git worktree prune
-  rm -rf "$ephemeral_dir" 2>/dev/null || true
-}
-
 # Main entry point
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   case "${1:-help}" in
@@ -402,38 +119,16 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     remove) remove_worktree "$2" ;;
     list) list_worktrees ;;
     is-main) is_main_repo && echo "true" || echo "false" ;;
-    handoff) create_handoff_state "$2" "$3" "$4" ;;
     cleanup) cleanup_all_worktrees ;;
-    setup) setup_worktree_with_handoff "$2" "$3" ;;
-    setup-state) setup_worktree_with_state "$2" "$3" ;;
-    pending) get_pending_worktree ;;
-    activate) activate_worktree "$2" ;;
-    set-mode) set_handoff_mode "$2" "$3" ;;
-    # Ephemeral worktree commands (for parallel subagent execution)
-    create-ephemeral) create_ephemeral_worktree "$2" "$3" ;;
-    merge-ephemeral) merge_ephemeral_group "$2" "$3" "$4" ;;
-    cleanup-ephemeral) cleanup_ephemeral_group "$2" "$3" ;;
-    cleanup-all-ephemeral) cleanup_all_ephemeral_worktrees ;;
     *)
-      echo "Usage: $0 {create|remove|list|is-main|setup-state|cleanup|...} [args]"
+      echo "Usage: $0 {create|remove|list|is-main|cleanup} [args]"
       echo ""
       echo "Commands:"
-      echo "  create <name>                    Create worktree at .worktrees/<name>"
-      echo "  remove <name>                    Remove worktree by name or path"
-      echo "  list                             List all .worktrees/"
-      echo "  is-main                          Check if in main repo"
-      echo "  setup-state <plan> <workflow>    Create worktree + state file (preferred)"
-      echo "  setup <plan> [mode]              Create worktree + handoff (deprecated)"
-      echo "  cleanup                          Remove all worktrees (interactive)"
-      echo "  pending                          Get most recent pending worktree"
-      echo "  activate <mode>                  Set mode and return pending worktree path"
-      echo "  set-mode <wt_path> <mode>        Update handoff mode"
-      echo ""
-      echo "Ephemeral (parallel subagent) commands:"
-      echo "  create-ephemeral <group> <task>  Create ephemeral worktree for task"
-      echo "  merge-ephemeral <wt> <grp> <lst> Merge ephemeral branches to worktree"
-      echo "  cleanup-ephemeral <group> <list> Cleanup ephemeral worktrees for group"
-      echo "  cleanup-all-ephemeral            Cleanup ALL ephemeral worktrees"
+      echo "  create <name>    Create worktree at .worktrees/<name>"
+      echo "  remove <name>    Remove worktree by name or path"
+      echo "  list             List all .worktrees/"
+      echo "  is-main          Check if in main repo"
+      echo "  cleanup          Remove all worktrees (interactive)"
       ;;
   esac
 fi

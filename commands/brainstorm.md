@@ -97,12 +97,18 @@ AskUserQuestion:
   multiSelect: false
   options:
     - label: "Create plan"
-      description: "Run /dev-workflow:write-plan @docs/plans/<file>.md"
+      description: "Use EnterPlanMode to create detailed implementation plan"
     - label: "Keep exploring"
       description: "Continue refining the design"
     - label: "Done"
       description: "End session, design is complete"
 ```
+
+**If "Create plan" selected:**
+1. Read the saved design document
+2. Use `EnterPlanMode` to enter planning mode
+3. Follow the Planning Methodology from getting-started skill
+4. Reference the design document when writing the plan
 
 ## Principles
 

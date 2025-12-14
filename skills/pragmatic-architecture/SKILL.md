@@ -5,7 +5,7 @@ description: |
   YAGNI, Colocation, and Rule of Three. Use when designing features, planning architecture, 
   "architect this", "design the structure", or when the code-architect agent is dispatched.
   Triggers: file structure, module organization, abstraction decisions, component splitting.
-allowed-tools: Read, Grep, Glob
+allowed-tools: []
 ---
 
 # Pragmatic Architecture

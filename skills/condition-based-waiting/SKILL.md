@@ -1,7 +1,7 @@
 ---
 name: condition-based-waiting
 description: This skill should be used when the user mentions "flaky tests", "race condition", "timing issues", "wait for", "test sometimes fails", or when tests have inconsistent pass/fail behavior. Replaces arbitrary timeouts with condition polling.
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob
+allowed-tools: Read, Bash
 ---
 
 # Condition-Based Waiting

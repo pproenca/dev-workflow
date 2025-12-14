@@ -1,7 +1,7 @@
 ---
 name: defense-in-depth
 description: This skill should be used when the user asks for "defensive coding", "input validation", "prevent bugs", "multiple validation layers", or when fixing bugs caused by invalid data reaching deep execution. Validates at every layer.
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob
+allowed-tools: []
 ---
 
 # Defense-in-Depth Validation

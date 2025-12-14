@@ -1,7 +1,7 @@
 ---
 name: test-driven-development
 description: Use this skill when implementing any feature, bug fix, or plan task. Triggers on "write tests", "add a test", "do TDD", "test-driven", "implement with tests", "implement task", or when dispatched as a subagent for plan execution. Write test first, watch it fail, write minimal code to pass.
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob
+allowed-tools: Read, Edit, Bash
 ---
 
 # Test-Driven Development (TDD)

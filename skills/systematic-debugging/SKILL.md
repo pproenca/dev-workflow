@@ -1,7 +1,7 @@
 ---
 name: systematic-debugging
 description: This skill should be used when the user reports a "bug", "not working", "fix this", "debug", "test failing", or when investigating unexpected behavior. Four-phase framework ensuring root cause understanding before attempting solutions.
-allowed-tools: Read, Bash, Grep, Glob
+allowed-tools: Read, Bash, Grep, Skill
 ---
 
 # Systematic Debugging

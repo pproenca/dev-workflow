@@ -1,10 +1,5 @@
 # Planning Philosophy
 
-<!--
-PURPOSE: Core philosophy for write-plan command and subagent execution.
-LOADED BY: commands/write-plan.md, skills/dev-workflow:subagent-driven-development
--->
-
 ## The Golden Rule
 
 **Write plans assuming the executor has zero context and questionable taste.**

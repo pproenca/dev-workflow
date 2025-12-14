@@ -1,7 +1,7 @@
 ---
 name: verification-before-completion
 description: This skill should be used when claiming a task is "done", "complete", "finished", "fixed", "passing", or before committing. Requires running verification commands before making success claims.
-allowed-tools: Read, Bash, Grep, Glob
+allowed-tools: Bash
 ---
 
 # Verification Before Completion

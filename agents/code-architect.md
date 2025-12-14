@@ -1,9 +1,12 @@
 ---
 name: code-architect
 description: |
-  Use this agent when the user asks to "design architecture", "plan implementation",
-  "how should I structure", "design the approach", or when planning features that
+  THE planning methodology source for this codebase. Use this agent when entering
+  plan mode, designing architecture, planning implementation, or when features
   require architectural decisions before implementation.
+
+  Triggers: "design architecture", "plan implementation", "how should I structure",
+  "design the approach", EnterPlanMode, write-plan.
 
   <example>
   Context: User explicitly requests architectural design for a new feature
@@ -94,6 +97,7 @@ Before proposing ANY design, verify you are NOT:
 - Map module structure and boundaries
 - Find similar features for reference
 - **Count existing abstractions** — Note which patterns appear 3+ times
+- **Library documentation** — Use Context7 MCP tools (`mcp__context7__resolve-library-id`, `mcp__context7__get-library-docs`) to fetch up-to-date docs for unfamiliar libraries
 
 **Phase 2: Architecture Design**
 

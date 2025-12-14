@@ -1,7 +1,7 @@
 ---
 name: testing-anti-patterns
 description: This skill should be used when reviewing test code, the user asks "is this test good", "test quality", "mock properly", or when tests behave unexpectedly. Identifies common testing mistakes.
-allowed-tools: Read, Grep, Glob
+allowed-tools: []
 ---
 
 # Testing Anti-Patterns
