@@ -10,7 +10,7 @@ Process code review feedback with technical evaluation, not emotional performanc
 
 ## When Invoked
 
-This skill is invoked after code-reviewer agent returns output. The caller (execute-plan Step 6 or subagent-driven-development Step 4) dispatches the reviewer; this skill processes the feedback.
+This skill is invoked after code-reviewer agent returns output. This skill processes the feedback.
 
 ## The Response Pattern
 
@@ -166,11 +166,6 @@ All fixes verified with tests.
 ```
 
 ## Integration
-
-**Invoked by:**
-
-- `execute-plan` Step 6 - After code-reviewer dispatch
-- `subagent-driven-development` Step 4 - After code-reviewer dispatch
 
 **Uses:**
 

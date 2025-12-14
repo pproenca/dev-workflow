@@ -6,7 +6,7 @@ description: |
   require architectural decisions before implementation.
 
   Triggers: "design architecture", "plan implementation", "how should I structure",
-  "design the approach", EnterPlanMode, write-plan.
+  "design the approach", EnterPlanMode.
 
   <example>
   Context: User explicitly requests architectural design for a new feature
@@ -39,8 +39,8 @@ description: |
   </example>
 
   <example>
-  Context: Proactive triggering after /dev-workflow:write-plan identifies complex feature
-  user: [/dev-workflow:write-plan identifies feature touching 5+ files]
+  Context: Proactive triggering during plan mode identifies complex feature
+  user: [EnterPlanMode identifies feature touching 5+ files]
   assistant: "This plan touches multiple modules. I'll get architectural guidance before detailing implementation steps."
   <commentary>
   Proactive trigger based on complexity. Multi-module features need architecture review to ensure consistent integration patterns.

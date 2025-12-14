@@ -190,7 +190,7 @@ EOF
 }
 
 # ============================================================================
-# frontmatter_set() tests - THESE SHOULD FAIL INITIALLY
+# frontmatter_set() tests
 # ============================================================================
 
 @test "frontmatter_set: key exists - updates value" {
@@ -234,7 +234,7 @@ EOF
   [[ "$result" == "new_value" ]]
 }
 
-@test "frontmatter_set: value with forward slash - SHOULD FAIL BEFORE FIX" {
+@test "frontmatter_set: value with forward slash" {
   cat > "$TEST_DIR/test.md" << 'EOF'
 ---
 path: placeholder
@@ -247,7 +247,7 @@ EOF
   [[ "$result" == "/path/to/file" ]]
 }
 
-@test "frontmatter_set: value with ampersand - SHOULD FAIL BEFORE FIX" {
+@test "frontmatter_set: value with ampersand" {
   cat > "$TEST_DIR/test.md" << 'EOF'
 ---
 name: placeholder
@@ -260,7 +260,7 @@ EOF
   [[ "$result" == "foo&bar" ]]
 }
 
-@test "frontmatter_set: value with backslash - SHOULD FAIL BEFORE FIX" {
+@test "frontmatter_set: value with backslash" {
   cat > "$TEST_DIR/test.md" << 'EOF'
 ---
 path: placeholder
@@ -301,238 +301,8 @@ EOF
 }
 
 # ============================================================================
-# output_json() tests
+# Integration: get then set roundtrip
 # ============================================================================
-
-@test "output_json: simple message" {
-  result=$(output_json "Hello World")
-  echo "$result" | grep -q '"additionalContext": "Hello World"'
-}
-
-@test "output_json: message with newlines" {
-  result=$(output_json "Line 1
-Line 2
-Line 3")
-  echo "$result" | grep -q '"additionalContext": "Line 1\\nLine 2\\nLine 3"'
-}
-
-@test "output_json: message with double quotes" {
-  result=$(output_json 'He said "hello"')
-  echo "$result" | grep -q 'He said \\"hello\\"'
-}
-
-@test "output_json: message with backslashes" {
-  result=$(output_json 'C:\Users\test')
-  echo "$result" | grep -q 'C:\\\\Users\\\\test'
-}
-
-# ============================================================================
-# get_state_file() tests
-# ============================================================================
-
-@test "get_state_file: returns absolute path in git repo" {
-  teardown_test_dir  # cleanup first
-  setup_git_repo
-  result=$(get_state_file)
-  # Should return absolute path
-  [[ "$result" == /* ]]
-  teardown_git_repo
-}
-
-@test "get_state_file: path contains expected suffix" {
-  teardown_test_dir
-  setup_git_repo
-  result=$(get_state_file)
-  [[ "$result" == *"/.claude/dev-workflow-state.local.md" ]]
-  teardown_git_repo
-}
-
-@test "get_state_file: works from subdirectory of repo" {
-  teardown_test_dir
-  setup_git_repo
-  mkdir -p "$TEST_DIR/deep/nested/dir"
-  cd "$TEST_DIR/deep/nested/dir"
-  result=$(get_state_file)
-  # Should still return path to repo root
-  [[ "$result" == "$TEST_DIR/.claude/dev-workflow-state.local.md" ]]
-  teardown_git_repo
-}
-
-@test "get_state_file: from nested subdirectory (3 levels deep)" {
-  teardown_test_dir
-  setup_git_repo
-  mkdir -p "$TEST_DIR/level1/level2/level3"
-  cd "$TEST_DIR/level1/level2/level3"
-  result=$(get_state_file)
-  [[ "$result" == "$TEST_DIR/.claude/dev-workflow-state.local.md" ]]
-  teardown_git_repo
-}
-
-@test "get_state_file: consistent across multiple calls" {
-  teardown_test_dir
-  setup_git_repo
-  result1=$(get_state_file)
-  result2=$(get_state_file)
-  [[ "$result1" == "$result2" ]]
-  teardown_git_repo
-}
-
-@test "get_state_file: returns empty string outside git repo" {
-  teardown_test_dir
-  setup_test_dir
-  cd "$TEST_DIR"
-  result=$(get_state_file)
-  [[ -z "$result" ]]
-  teardown_test_dir
-}
-
-# ============================================================================
-# get_handoff_file() tests
-# ============================================================================
-
-@test "get_handoff_file: returns absolute path in git repo" {
-  teardown_test_dir
-  setup_git_repo
-  result=$(get_handoff_file)
-  [[ "$result" == /* ]]
-  teardown_git_repo
-}
-
-@test "get_handoff_file: path contains expected suffix" {
-  teardown_test_dir
-  setup_git_repo
-  result=$(get_handoff_file)
-  [[ "$result" == *"/.claude/pending-handoff.local.md" ]]
-  teardown_git_repo
-}
-
-@test "get_handoff_file: works from subdirectory of repo" {
-  teardown_test_dir
-  setup_git_repo
-  mkdir -p "$TEST_DIR/subdir"
-  cd "$TEST_DIR/subdir"
-  result=$(get_handoff_file)
-  [[ "$result" == "$TEST_DIR/.claude/pending-handoff.local.md" ]]
-  teardown_git_repo
-}
-
-@test "get_handoff_file: returns empty string outside git repo" {
-  teardown_test_dir
-  setup_test_dir
-  cd "$TEST_DIR"
-  result=$(get_handoff_file)
-  [[ -z "$result" ]]
-  teardown_test_dir
-}
-
-# ============================================================================
-# has_active_workflow() tests (requires git repo)
-# ============================================================================
-
-@test "has_active_workflow: file exists in git repo" {
-  teardown_test_dir
-  setup_git_repo
-  mkdir -p "$TEST_DIR/.claude"
-  touch "$TEST_DIR/.claude/dev-workflow-state.local.md"
-  cd "$TEST_DIR"
-  run has_active_workflow
-  [[ "$status" -eq 0 ]]
-  teardown_git_repo
-}
-
-@test "has_active_workflow: no file in git repo" {
-  teardown_test_dir
-  setup_git_repo
-  cd "$TEST_DIR"
-  run has_active_workflow
-  [[ "$status" -ne 0 ]]
-  teardown_git_repo
-}
-
-@test "has_active_workflow: works from subdirectory" {
-  teardown_test_dir
-  setup_git_repo
-  mkdir -p "$TEST_DIR/.claude"
-  touch "$TEST_DIR/.claude/dev-workflow-state.local.md"
-  mkdir -p "$TEST_DIR/subdir"
-  cd "$TEST_DIR/subdir"
-  run has_active_workflow
-  [[ "$status" -eq 0 ]]
-  teardown_git_repo
-}
-
-# ============================================================================
-# has_pending_handoff() tests (requires git repo)
-# ============================================================================
-
-@test "has_pending_handoff: file exists in git repo" {
-  teardown_test_dir
-  setup_git_repo
-  mkdir -p "$TEST_DIR/.claude"
-  touch "$TEST_DIR/.claude/pending-handoff.local.md"
-  cd "$TEST_DIR"
-  run has_pending_handoff
-  [[ "$status" -eq 0 ]]
-  teardown_git_repo
-}
-
-@test "has_pending_handoff: no file in git repo" {
-  teardown_test_dir
-  setup_git_repo
-  cd "$TEST_DIR"
-  run has_pending_handoff
-  [[ "$status" -ne 0 ]]
-  teardown_git_repo
-}
-
-@test "has_pending_handoff: works from subdirectory" {
-  teardown_test_dir
-  setup_git_repo
-  mkdir -p "$TEST_DIR/.claude"
-  touch "$TEST_DIR/.claude/pending-handoff.local.md"
-  mkdir -p "$TEST_DIR/subdir"
-  cd "$TEST_DIR/subdir"
-  run has_pending_handoff
-  [[ "$status" -eq 0 ]]
-  teardown_git_repo
-}
-
-# ============================================================================
-# Integration: frontmatter functions with get_state_file
-# ============================================================================
-
-@test "frontmatter_get: using get_state_file path" {
-  teardown_test_dir
-  setup_git_repo
-  STATE_FILE="$(get_state_file)"
-  mkdir -p "$(dirname "$STATE_FILE")"
-  cat > "$STATE_FILE" << 'EOF'
----
-workflow: execute-plan
-current_task: 3
----
-EOF
-  result=$(frontmatter_get "$STATE_FILE" "current_task")
-  [[ "$result" == "3" ]]
-  teardown_git_repo
-}
-
-@test "frontmatter_set: using get_state_file path" {
-  teardown_test_dir
-  setup_git_repo
-  STATE_FILE="$(get_state_file)"
-  mkdir -p "$(dirname "$STATE_FILE")"
-  cat > "$STATE_FILE" << 'EOF'
----
-workflow: execute-plan
-current_task: 3
----
-EOF
-  frontmatter_set "$STATE_FILE" "current_task" "4"
-  result=$(frontmatter_get "$STATE_FILE" "current_task")
-  [[ "$result" == "4" ]]
-  teardown_git_repo
-}
 
 @test "integration: get then set roundtrip" {
   cat > "$TEST_DIR/test.md" << 'EOF'

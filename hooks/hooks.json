@@ -11,18 +11,6 @@
           }
         ]
       }
-    ],
-    "PostPlanModeExit": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/post-plan-exit.sh\"",
-            "timeout": 5
-          }
-        ]
-      }
     ]
   }
 }

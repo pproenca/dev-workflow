@@ -6,8 +6,7 @@ Structured development workflow for Claude Code. Enforces TDD, systematic debugg
 flowchart LR
     subgraph entry["Entry Points"]
         B["/brainstorm"]
-        W["/write-plan"]
-        E["/execute-plan"]
+        P["EnterPlanMode"]
     end
 
     subgraph artifacts["Artifacts"]
@@ -16,20 +15,14 @@ flowchart LR
     end
 
     subgraph execution["Execution"]
-        SUB["subagent-driven"]
-        BATCH["batch checkpoints"]
+        SWARM["Swarm execution"]
     end
 
     B -->|"Socratic dialogue"| DD
-    DD -->|"input"| W
-    W -->|"explore + design"| PF
-
-    PF -->|"Execute now"| SUB
-    PF -->|"Batch execution"| BATCH
-    E -->|"existing plan"| BATCH
-
-    SUB --> DONE["Done"]
-    BATCH --> DONE
+    DD -->|"input"| P
+    P -->|"explore + design"| PF
+    PF -->|"ExitPlanMode(launchSwarm)"| SWARM
+    SWARM --> DONE["Done"]
 ```
 
 ## Why This Plugin
@@ -42,8 +35,7 @@ Most plugins add capabilities. This one changes how you work.
 
 | Problem | Solution |
 |---------|----------|
-| Context pollution | Fresh subagent per task |
-| Lost state on crash | Workflow state in files |
+| Context pollution | Native swarm execution |
 | "Should work now" | Verification before any claim |
 | Symptom patching | Systematic debugging framework |
 | Skipped tests | TDD as methodology, not suggestion |
@@ -54,43 +46,31 @@ Built on Claude Code primitives:
 
 ```
 SessionStart hook
-    └── Detects pending work, loads getting-started skill
+    └── Loads getting-started skill with planning methodology
 
-Task tool
-    └── Fresh subagent per task (haiku/sonnet/opus by complexity)
+EnterPlanMode / ExitPlanMode
+    └── Native plan mode for design + swarm execution
 
-State files (.claude/*.local.md)
-    └── Resume across sessions, worktree-scoped
-
-SubagentStop hook
-    └── Verifies commit after each task
-
-Stop hook
-    └── Warns on incomplete workflow
+PostPlanModeExit hook
+    └── Reminds of post-swarm actions (code review, finish branch)
 ```
 
 **Token efficiency:**
 - Skills loaded on-demand via triggers
-- State in files, not conversation
-- Subagents keep main context clean
+- Native swarm handles parallel execution
 - Model selection per task complexity
-
-**Parallel execution:**
-- Git worktrees for isolation
-- Each worktree has own state file
-- No stepping on each other
 
 ## Features
 
-### Skills (13)
+### Skills (11)
 
 | Category | Skills |
 |----------|--------|
 | Methodology | `test-driven-development`, `systematic-debugging`, `root-cause-tracing` |
 | Quality | `verification-before-completion`, `testing-anti-patterns`, `defense-in-depth` |
-| Collaboration | `requesting-code-review`, `receiving-code-review` |
-| Workflow | `subagent-driven-development`, `using-git-worktrees`, `finishing-a-development-branch` |
-| Session | `getting-started`, `condition-based-waiting` |
+| Collaboration | `receiving-code-review` |
+| Workflow | `finishing-a-development-branch` |
+| Session | `getting-started`, `condition-based-waiting`, `pragmatic-architecture` |
 
 **Rigid skills** (follow exactly): TDD, debugging, verification
 **Flexible skills** (adapt principles): brainstorming, architecture
@@ -100,9 +80,6 @@ Stop hook
 | Command | Purpose |
 |---------|---------|
 | `/dev-workflow:brainstorm` | Refine idea → design doc |
-| `/dev-workflow:write-plan` | Design doc → implementation plan |
-| `/dev-workflow:execute-plan` | Plan → code (with checkpoints) |
-| `/dev-workflow:workflow-status` | Show current state |
 
 ### Agents
 

@@ -60,8 +60,6 @@ No shortcuts. Run the command. Read the output. Then claim.
 This principle applies at every claim point:
 
 - **TDD** - Verify RED, verify GREEN
-- **execute-plan** - Verify before checkpoint
-- **subagent-driven-development** - Verify subagent reports independently
 - **finishing-a-development-branch** - Verify tests before merge options
 
 Triggers independently when making claims outside formal workflows.

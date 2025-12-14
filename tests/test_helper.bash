@@ -121,7 +121,7 @@ create_state_file() {
   mkdir -p "$dir/.claude"
   cat > "$dir/.claude/dev-workflow-state.local.md" << EOF
 ---
-workflow: sequential
+workflow: swarm
 plan: /path/to/plan.md
 current_task: $current
 total_tasks: $total

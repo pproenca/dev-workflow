@@ -32,7 +32,6 @@ Tests run on commit via pre-commit hook.
 
 **Hooks** (`hooks/hooks.json`):
 - `SessionStart` → loads getting-started skill with planning methodology
-- `PostPlanModeExit` → reminds of post-swarm actions (code review, finish branch)
 
 **Helper functions**: `scripts/hook-helpers.sh` provides `frontmatter_get`/`frontmatter_set` for safe YAML parsing.
 
