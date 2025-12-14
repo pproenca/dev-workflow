@@ -1,6 +1,10 @@
 #!/bin/bash
 # PostPlanModeExit hook - reminds Claude of post-swarm actions
 # Fires after ExitPlanMode completes
+#
+# Timing assumption: If ExitPlanMode(launchSwarm: true) was called,
+# this hook fires AFTER the swarm completes, not before.
+# The swarm is part of the ExitPlanMode operation.
 
 set -euo pipefail
 

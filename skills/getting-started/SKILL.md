@@ -90,6 +90,34 @@ See `references/skill-integration.md` for decision tree and skill chains.
 
 When entering plan mode via `EnterPlanMode`, use this methodology:
 
+### When to Use AskUserQuestion
+
+**USE AskUserQuestion for:**
+- Multiple valid approaches: "JWT tokens vs session cookies for auth?"
+- Technology choices: "Which testing framework: pytest or unittest?"
+- Unclear scope: "Should this include admin functionality?"
+- Trade-off decisions: "Optimize for speed or maintainability?"
+
+**DO NOT use AskUserQuestion for:**
+- Decisions you can make from codebase patterns (follow existing conventions)
+- Implementation details covered by TDD (tests define behavior)
+- Choices the user already specified in their request
+
+**Format:**
+```
+AskUserQuestion:
+  header: "Auth method"  # max 12 chars
+  question: "Which authentication approach?"
+  multiSelect: false
+  options:
+    - label: "JWT tokens (Recommended)"
+      description: "Stateless, scalable, matches existing API patterns"
+    - label: "Session cookies"
+      description: "Simpler, but requires server state"
+```
+
+Ask questions BEFORE writing the plan, not during execution.
+
 ### Phase 1: Explore
 
 Use the native Explore agent with "very thorough" setting to survey the codebase:
@@ -99,10 +127,16 @@ Use the native Explore agent with "very thorough" setting to survey the codebase
 - Testing conventions and file locations
 - Technology stack and frameworks
 
-For complex features (touching 5+ files), dispatch code-architect agent:
+For complex features (touching 5+ files), dispatch code-architect in background:
 ```
 Task(subagent_type: 'dev-workflow:code-architect',
-     prompt: 'Design architecture for [feature]. Focus: minimal changes.')
+     prompt: 'Design architecture for [feature]. Focus: minimal changes.',
+     run_in_background: true)
+```
+
+Continue exploring while architect works. Retrieve results when ready:
+```
+TaskOutput(task_id: '<architect-task-id>', block: true)
 ```
 
 ### Phase 2: Design
@@ -220,3 +254,64 @@ After swarm completes, the main session must:
 3. **Finish Branch** - Use `Skill("dev-workflow:finishing-a-development-branch")`
 
 These steps are MANDATORY after swarm execution.
+
+---
+
+## Executing Existing Plans
+
+When user has an existing plan file (from brainstorm, previous session, or external source):
+
+### Step 1: Read and Validate
+
+```
+Read the plan file
+Verify it has Task format: "### Task N: [Name]"
+Check for TDD instructions in each task
+```
+
+### Step 2: Ask User Approach
+
+Use AskUserQuestion to confirm execution:
+
+```
+AskUserQuestion:
+  header: "Execution"
+  question: "How should I execute this plan?"
+  multiSelect: false
+  options:
+    - label: "Sequential (Recommended)"
+      description: "Execute tasks one by one with full TDD cycle"
+    - label: "Parallel via swarm"
+      description: "Enter plan mode, adapt plan, launch swarm"
+    - label: "Review first"
+      description: "Let me review and suggest improvements"
+```
+
+### Step 3a: Sequential Execution
+
+For each task in order:
+1. Create TodoWrite with all tasks
+2. Mark current task `in_progress`
+3. Follow TDD instructions embedded in task
+4. Commit after task passes
+5. Mark task `completed`, move to next
+
+After all tasks:
+- Dispatch code-reviewer
+- Use receiving-code-review skill
+- Use finishing-a-development-branch skill
+
+### Step 3b: Parallel via Swarm
+
+1. Use `EnterPlanMode`
+2. Adapt existing plan to native format if needed
+3. Write to plan file
+4. `ExitPlanMode(launchSwarm: true)`
+5. Follow Post-Swarm Actions
+
+### Step 3c: Review First
+
+1. Analyze plan against codebase
+2. Identify issues or improvements
+3. Present findings to user
+4. Ask if user wants to proceed or modify

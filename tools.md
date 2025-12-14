@@ -232,7 +232,6 @@
   - dev-workflow:condition-based-waiting
   - dev-workflow:receiving-code-review
   - dev-workflow:verification-before-completion
-  - dev-workflow:subagent-driven-development
   - dev-workflow:defense-in-depth
 
   ---
@@ -244,8 +243,6 @@
   - command (required, string): The slash command to execute with arguments (e.g., /review-pr 123)
 
   Available Commands:
-  - /dev-workflow:execute-plan [plan-file]
-  - /dev-workflow:write-plan [feature] or [@design-doc.md]
   - /dev-workflow:workflow-status
   - /dev-workflow:brainstorm [topic or @design-doc.md]
 

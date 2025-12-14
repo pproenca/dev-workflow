@@ -1,6 +1,6 @@
 {
   "name": "pproenca",
-  "version": "1.3.17",
+  "version": "2.0.0",
   "description": "Personal plugins for Claude Code",
   "owner": {
     "name": "Pedro Proenca"
@@ -9,7 +9,7 @@
     {
       "name": "dev-workflow",
       "description": "Development workflow with TDD, debugging, and collaboration skills",
-      "version": "1.3.17",
+      "version": "2.0.0",
       "author": {
         "name": "Pedro Proenca"
       },
