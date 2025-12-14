@@ -48,7 +48,7 @@ description: |
   assistant: "I'll use the code-architect agent to analyze cross-module integration points."
   </example>
 tools: Glob, Grep, LS, Read, NotebookRead, WebFetch, TodoWrite, WebSearch
-model: sonnet
+model: opus
 color: green
 skills: dev-workflow:defense-in-depth, dev-workflow:pragmatic-architecture
 ---

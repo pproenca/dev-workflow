@@ -44,7 +44,7 @@ description: |
   </commentary>
   assistant: "I'll use the code-reviewer agent to check the refactored authentication module."
   </example>
-model: sonnet
+model: opus
 color: cyan
 tools: Glob, Grep, LS, Read, Bash
 skills: dev-workflow:testing-anti-patterns, dev-workflow:pragmatic-architecture

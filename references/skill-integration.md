@@ -58,7 +58,7 @@ AskUserQuestion: "Proceed to finish?"
 
 ```claude
 Task tool (dev-workflow:code-reviewer):
-  model: sonnet
+  model: opus
   prompt: |
     [multi-line prompt]
 ```
