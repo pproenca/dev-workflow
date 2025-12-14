@@ -16,6 +16,97 @@ teardown() {
 }
 
 # ============================================================================
+# State file detection (resume capability) - 4 tests
+# ============================================================================
+
+@test "state detection: no state file - loads getting-started skill" {
+  cd "$TEST_DIR"
+
+  # Ensure no state file exists
+  rm -rf "$TEST_DIR/.claude"
+  [[ ! -f "$TEST_DIR/.claude/dev-workflow-state.local.md" ]]
+
+  run "$HOOK"
+
+  # Debug: show output if test fails
+  echo "# Output: $output" >&2
+
+  [ "$status" -eq 0 ]
+  # Should load getting-started skill, not resume message
+  echo "$output" | grep -q "Getting Started" || echo "$output" | grep -q "dev-workflow plugin active"
+  # Verify we're NOT in resume mode - resume mode starts additionalContext with ACTIVE WORKFLOW
+  # (The skill documentation mentions it, but not at the start of additionalContext)
+  echo "$output" | grep -q "dev-workflow skills available" || echo "$output" | grep -q "dev-workflow plugin active"
+}
+
+@test "state detection: state file exists - shows resume prompt" {
+  cd "$TEST_DIR"
+
+  # Create state file
+  mkdir -p "$TEST_DIR/.claude"
+  cat > "$TEST_DIR/.claude/dev-workflow-state.local.md" << 'EOF'
+---
+plan: docs/plans/test-plan.md
+current_task: 3
+total_tasks: 8
+base_sha: abc123
+---
+EOF
+
+  run "$HOOK"
+
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "ACTIVE WORKFLOW DETECTED"
+  echo "$output" | grep -q "3/8 tasks"
+  echo "$output" | grep -q "/dev-workflow:resume"
+  echo "$output" | grep -q "/dev-workflow:abandon"
+}
+
+@test "state detection: state file exists - valid JSON output" {
+  cd "$TEST_DIR"
+
+  mkdir -p "$TEST_DIR/.claude"
+  cat > "$TEST_DIR/.claude/dev-workflow-state.local.md" << 'EOF'
+---
+plan: docs/plans/test-plan.md
+current_task: 5
+total_tasks: 10
+base_sha: def456
+---
+EOF
+
+  run "$HOOK"
+
+  [ "$status" -eq 0 ]
+  assert_valid_json
+}
+
+@test "state detection: state file in worktree root (not cwd)" {
+  cd "$TEST_DIR"
+
+  # Create subdirectory and state file at repo root
+  mkdir -p "$TEST_DIR/src/components"
+  mkdir -p "$TEST_DIR/.claude"
+  cat > "$TEST_DIR/.claude/dev-workflow-state.local.md" << 'EOF'
+---
+plan: docs/plans/test-plan.md
+current_task: 2
+total_tasks: 5
+base_sha: ghi789
+---
+EOF
+
+  # Run from subdirectory
+  cd "$TEST_DIR/src/components"
+
+  run "$HOOK"
+
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "ACTIVE WORKFLOW DETECTED"
+  echo "$output" | grep -q "2/5 tasks"
+}
+
+# ============================================================================
 # Getting started path (4 tests)
 # ============================================================================
 

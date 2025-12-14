@@ -54,3 +54,43 @@ frontmatter_set() {
   sed "s|^${key}: .*|${key}: ${escaped_value}|" "$file" > "$temp"
   mv "$temp" "$file"
 }
+
+# Get state file path (repo-scoped)
+# Usage: get_state_file
+# Returns: Path to .claude/dev-workflow-state.local.md in repo root
+# Exit 1 if not in a git repo
+get_state_file() {
+  local repo_root
+  repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+  echo "${repo_root}/.claude/dev-workflow-state.local.md"
+}
+
+# Create minimal state file for workflow resume
+# Usage: create_state_file <plan_file>
+# Creates: .claude/dev-workflow-state.local.md with plan, current_task, total_tasks, base_sha
+create_state_file() {
+  local plan_file="$1"
+  local state_file
+  state_file=$(get_state_file) || return 1
+
+  local total_tasks
+  total_tasks=$(grep -c "^### Task [0-9]\+:" "$plan_file" 2>/dev/null || echo "0")
+
+  mkdir -p "$(dirname "$state_file")"
+  cat > "$state_file" << EOF
+---
+plan: $plan_file
+current_task: 0
+total_tasks: $total_tasks
+base_sha: $(git rev-parse HEAD)
+---
+EOF
+}
+
+# Delete state file (workflow complete or abandoned)
+# Usage: delete_state_file
+delete_state_file() {
+  local state_file
+  state_file=$(get_state_file) || return 1
+  rm -f "$state_file"
+}

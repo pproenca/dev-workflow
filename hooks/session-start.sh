@@ -1,9 +1,37 @@
 #!/bin/bash
-# Session start hook - loads getting-started skill with planning methodology
+# Session start hook - detects active workflow or loads getting-started skill
 # No external dependencies required
 
 set -euo pipefail
 
+# Try to source hook-helpers.sh if available (for state file detection)
+HELPERS="${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+if [[ -f "$HELPERS" ]]; then
+  # shellcheck source=scripts/hook-helpers.sh
+  source "$HELPERS"
+
+  # Check for active workflow FIRST (resume capability)
+  STATE_FILE="$(get_state_file 2>/dev/null)" || STATE_FILE=""
+
+  if [[ -n "$STATE_FILE" ]] && [[ -f "$STATE_FILE" ]]; then
+    PLAN=$(frontmatter_get "$STATE_FILE" "plan" "")
+    CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+    TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
+
+    # Output resume context instead of getting-started skill
+    cat << EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "<system-context>\\n**ACTIVE WORKFLOW DETECTED**\\n\\nPlan: ${PLAN}\\nProgress: ${CURRENT}/${TOTAL} tasks\\n\\nCommands:\\n- /dev-workflow:resume - Continue execution\\n- /dev-workflow:abandon - Discard workflow state\\n</system-context>"
+  }
+}
+EOF
+    exit 0
+  fi
+fi
+
+# No active workflow - load getting-started skill
 SKILL_FILE="${CLAUDE_PLUGIN_ROOT}/skills/getting-started/SKILL.md"
 
 if [[ -f "$SKILL_FILE" ]]; then

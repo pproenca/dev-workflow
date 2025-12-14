@@ -331,3 +331,173 @@ EOF
   path=$(frontmatter_get "$TEST_DIR/test.md" "path")
   [[ "$path" == "/home/user" ]]
 }
+
+# ============================================================================
+# get_state_file() tests
+# ============================================================================
+
+@test "get_state_file: in git repo - returns correct path" {
+  # Initialize git repo in test dir
+  cd "$TEST_DIR"
+  git init
+  git config user.email "test@test.com"
+  git config user.name "Test"
+
+  result=$(get_state_file)
+  [[ "$result" == "$TEST_DIR/.claude/dev-workflow-state.local.md" ]]
+}
+
+@test "get_state_file: not in git repo - returns error" {
+  cd "$TEST_DIR"
+  # Ensure not in a git repo (TEST_DIR is created fresh each test)
+
+  run get_state_file
+  [[ "$status" -eq 1 ]]
+}
+
+@test "get_state_file: from subdirectory - still returns repo root path" {
+  cd "$TEST_DIR"
+  git init
+  git config user.email "test@test.com"
+  git config user.name "Test"
+
+  mkdir -p "$TEST_DIR/src/deep/nested"
+  cd "$TEST_DIR/src/deep/nested"
+
+  result=$(get_state_file)
+  [[ "$result" == "$TEST_DIR/.claude/dev-workflow-state.local.md" ]]
+}
+
+# ============================================================================
+# create_state_file() tests
+# ============================================================================
+
+@test "create_state_file: creates file with correct structure" {
+  cd "$TEST_DIR"
+  git init
+  git config user.email "test@test.com"
+  git config user.name "Test"
+  echo "test" > file.txt
+  git add file.txt
+  git commit -m "Initial"
+
+  # Create a plan file with tasks
+  mkdir -p "$TEST_DIR/docs/plans"
+  cat > "$TEST_DIR/docs/plans/test-plan.md" << 'EOF'
+# Test Plan
+
+### Task 1: First task
+Content
+
+### Task 2: Second task
+Content
+
+### Task 3: Third task
+Content
+EOF
+
+  create_state_file "$TEST_DIR/docs/plans/test-plan.md"
+
+  state_file="$TEST_DIR/.claude/dev-workflow-state.local.md"
+  [[ -f "$state_file" ]]
+
+  # Verify fields
+  plan=$(frontmatter_get "$state_file" "plan")
+  [[ "$plan" == "$TEST_DIR/docs/plans/test-plan.md" ]]
+
+  current=$(frontmatter_get "$state_file" "current_task")
+  [[ "$current" == "0" ]]
+
+  total=$(frontmatter_get "$state_file" "total_tasks")
+  [[ "$total" == "3" ]]
+
+  base_sha=$(frontmatter_get "$state_file" "base_sha")
+  [[ -n "$base_sha" ]]
+}
+
+@test "create_state_file: creates .claude directory if missing" {
+  cd "$TEST_DIR"
+  git init
+  git config user.email "test@test.com"
+  git config user.name "Test"
+  echo "test" > file.txt
+  git add file.txt
+  git commit -m "Initial"
+
+  # Create minimal plan
+  cat > "$TEST_DIR/plan.md" << 'EOF'
+### Task 1: Only task
+EOF
+
+  # Ensure .claude doesn't exist
+  [[ ! -d "$TEST_DIR/.claude" ]]
+
+  create_state_file "$TEST_DIR/plan.md"
+
+  [[ -d "$TEST_DIR/.claude" ]]
+  [[ -f "$TEST_DIR/.claude/dev-workflow-state.local.md" ]]
+}
+
+@test "create_state_file: counts zero tasks for empty plan" {
+  cd "$TEST_DIR"
+  git init
+  git config user.email "test@test.com"
+  git config user.name "Test"
+  echo "test" > file.txt
+  git add file.txt
+  git commit -m "Initial"
+
+  # Create plan with no tasks
+  cat > "$TEST_DIR/empty-plan.md" << 'EOF'
+# Empty Plan
+No tasks here.
+EOF
+
+  create_state_file "$TEST_DIR/empty-plan.md"
+
+  state_file="$TEST_DIR/.claude/dev-workflow-state.local.md"
+  total=$(frontmatter_get "$state_file" "total_tasks")
+  [[ "$total" == "0" ]]
+}
+
+# ============================================================================
+# delete_state_file() tests
+# ============================================================================
+
+@test "delete_state_file: removes existing state file" {
+  cd "$TEST_DIR"
+  git init
+  git config user.email "test@test.com"
+  git config user.name "Test"
+
+  mkdir -p "$TEST_DIR/.claude"
+  echo "test state" > "$TEST_DIR/.claude/dev-workflow-state.local.md"
+  [[ -f "$TEST_DIR/.claude/dev-workflow-state.local.md" ]]
+
+  delete_state_file
+
+  [[ ! -f "$TEST_DIR/.claude/dev-workflow-state.local.md" ]]
+}
+
+@test "delete_state_file: succeeds silently if file doesn't exist" {
+  cd "$TEST_DIR"
+  git init
+  git config user.email "test@test.com"
+  git config user.name "Test"
+
+  # No state file exists
+  [[ ! -f "$TEST_DIR/.claude/dev-workflow-state.local.md" ]]
+
+  run delete_state_file
+
+  [[ "$status" -eq 0 ]]
+}
+
+@test "delete_state_file: not in git repo - returns error" {
+  cd "$TEST_DIR"
+  # Not a git repo
+
+  run delete_state_file
+
+  [[ "$status" -eq 1 ]]
+}

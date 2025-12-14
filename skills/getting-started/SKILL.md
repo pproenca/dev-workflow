@@ -237,6 +237,41 @@ Use `ExitPlanMode(launchSwarm: true, teammateCount: N)` to spawn parallel teamma
 - Teammates work in parallel where tasks have no file overlap
 - Tasks in same group with file overlap run sequentially
 
+### State Persistence (Resume Capability)
+
+After `ExitPlanMode(launchSwarm: true)`, create a state file for resume:
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+create_state_file "<plan_file_path>"
+```
+
+This creates `.claude/dev-workflow-state.local.md` with:
+- Plan file path
+- Current task counter (0)
+- Total tasks
+- Base commit SHA
+
+**State updates automatically** via `SubagentStop` hook when each teammate completes.
+
+**If session ends unexpectedly**, the next session will detect the state file and prompt:
+```
+ACTIVE WORKFLOW DETECTED
+Plan: docs/plans/2025-12-14-feature.md
+Progress: 3/8 tasks
+
+Commands:
+- /dev-workflow:resume - Continue execution
+- /dev-workflow:abandon - Discard workflow state
+```
+
+**After workflow completes** (code review + finish branch done), delete state:
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+delete_state_file
+```
+
 ### Post-Swarm Actions
 
 After swarm completes, the main session must:
