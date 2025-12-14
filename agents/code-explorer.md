@@ -44,7 +44,7 @@ description: |
   </commentary>
   assistant: "I'll use the code-explorer agent to survey the project structure and conventions."
   </example>
-tools: Glob, Grep, LS, Read
+tools: Glob, Grep, LS, Read, mcp__cclsp__find_definition, mcp__cclsp__find_references
 model: sonnet
 color: blue
 ---
@@ -91,6 +91,13 @@ Use Grep to find similar implementations:
 - Note architectural patterns (MVC, services, repositories, hooks)
 - Find shared utilities and common abstractions
 - Check for existing type definitions and interfaces
+
+**Use LSP tools for precise symbol navigation:**
+
+- `mcp__cclsp__find_definition` - Find where a function/class/variable is defined
+- `mcp__cclsp__find_references` - Find all usages of a symbol across the codebase
+
+These tools provide accurate line numbers and handle complex cases like method overloading.
 
 ### Phase 3: Integration Analysis
 

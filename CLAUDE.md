@@ -39,7 +39,7 @@ Tests run on commit via pre-commit hook.
 
 All components require YAML frontmatter.
 
-**Valid tools:** `Read`, `Write`, `Edit`, `Bash`, `Glob`, `Grep`, `Task`, `TodoWrite`, `AskUserQuestion`, `Skill`, `WebFetch`, `WebSearch`, `NotebookRead`, `NotebookEdit`, `LS`
+**Valid tools:** `Read`, `Write`, `Edit`, `Bash`, `Glob`, `Grep`, `Task`, `TodoWrite`, `AskUserQuestion`, `Skill`, `WebFetch`, `WebSearch`, `NotebookRead`, `NotebookEdit`, `LS`, `mcp__*` (MCP tools)
 
 **Skills** (`skills/<name>/SKILL.md`):
 ```yaml

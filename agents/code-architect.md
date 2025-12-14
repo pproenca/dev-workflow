@@ -47,7 +47,7 @@ description: |
   </commentary>
   assistant: "I'll use the code-architect agent to analyze cross-module integration points."
   </example>
-tools: Glob, Grep, LS, Read, NotebookRead, WebFetch, TodoWrite, WebSearch
+tools: Glob, Grep, LS, Read, NotebookRead, WebFetch, TodoWrite, WebSearch, mcp__cclsp__find_definition, mcp__cclsp__find_references
 model: opus
 color: green
 skills: dev-workflow:defense-in-depth, dev-workflow:pragmatic-architecture
@@ -98,6 +98,9 @@ Before proposing ANY design, verify you are NOT:
 - Find similar features for reference
 - **Count existing abstractions** — Note which patterns appear 3+ times
 - **Library documentation** — Use Context7 MCP tools (`mcp__context7__resolve-library-id`, `mcp__context7__get-library-docs`) to fetch up-to-date docs for unfamiliar libraries
+- **Use LSP tools for dependency analysis:**
+  - `mcp__cclsp__find_definition` — Navigate to symbol definitions precisely
+  - `mcp__cclsp__find_references` — Map dependencies and understand coupling
 
 **Phase 2: Architecture Design**
 

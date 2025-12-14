@@ -46,7 +46,7 @@ description: |
   </example>
 model: opus
 color: cyan
-tools: Glob, Grep, LS, Read, Bash
+tools: Glob, Grep, LS, Read, Bash, mcp__cclsp__find_references, mcp__cclsp__get_diagnostics
 skills: dev-workflow:testing-anti-patterns, dev-workflow:pragmatic-architecture
 ---
 
@@ -67,10 +67,19 @@ You are an expert code reviewer specializing in identifying issues across implem
 1. **Understand scope**: Read the plan file if provided
 2. **Get diff**: Run `git diff BASE_SHA HEAD` to see all changes
 3. **Analyze files**: Read each changed file
-4. **Check patterns**: Verify consistency with existing codebase
-5. **Review tests**: Check for anti-patterns (testing mocks, incomplete mocks, test-only methods)
-6. **Check architecture**: Flag over-engineering violations
-7. **Identify issues**: Categorize by severity
+4. **Check LSP diagnostics**: Run `mcp__cclsp__get_diagnostics` on changed files to catch:
+   - Type errors
+   - Unused imports/variables
+   - Missing type annotations
+   - Syntax errors
+5. **Verify symbol usage**: Use `mcp__cclsp__find_references` to ensure:
+   - New functions are actually used
+   - Renamed symbols are updated everywhere
+   - No orphaned code
+6. **Check patterns**: Verify consistency with existing codebase
+7. **Review tests**: Check for anti-patterns (testing mocks, incomplete mocks, test-only methods)
+8. **Check architecture**: Flag over-engineering violations
+9. **Identify issues**: Categorize by severity
 
 ## Issue Categories
 

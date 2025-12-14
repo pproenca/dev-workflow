@@ -98,7 +98,7 @@ fi
 
 # Frontmatter value validation
 echo -e "\n--- Frontmatter Values ---"
-VALID_TOOLS="Read|Write|Edit|Bash|Glob|Grep|Task|TodoWrite|AskUserQuestion|Skill|WebFetch|WebSearch|NotebookRead|NotebookEdit|LS"
+VALID_TOOLS="Read|Write|Edit|Bash|Glob|Grep|Task|TodoWrite|AskUserQuestion|Skill|WebFetch|WebSearch|NotebookRead|NotebookEdit|LS|mcp__[a-zA-Z0-9_]+"
 for f in "$PLUGIN_ROOT"/commands/*.md "$PLUGIN_ROOT"/skills/*/SKILL.md "$PLUGIN_ROOT"/agents/*.md; do
   [[ -f "$f" ]] || continue
   name=$(basename "$f" .md)

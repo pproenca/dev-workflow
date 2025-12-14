@@ -114,6 +114,13 @@ Task:
   description: "Execute Task [N]"
   prompt: |
     Execute Task [N] from plan. Follow TDD instructions exactly.
+
+    **Use LSP tools for accurate code navigation:**
+    - `mcp__cclsp__find_definition` - Find symbol definitions
+    - `mcp__cclsp__find_references` - Find all usages before modifying
+    - `mcp__cclsp__rename_symbol` - Safe refactoring across files
+    - `mcp__cclsp__get_diagnostics` - Check for errors after changes
+
     [Task content extracted via get_task_content]
   run_in_background: true
 ```
@@ -217,6 +224,13 @@ Task:
   description: "Execute Task 1"
   prompt: |
     Execute Task 1 from plan. Follow TDD instructions exactly.
+
+    **Use LSP tools for accurate code navigation:**
+    - `mcp__cclsp__find_definition` - Find symbol definitions
+    - `mcp__cclsp__find_references` - Find all usages before modifying
+    - `mcp__cclsp__rename_symbol` - Safe refactoring across files
+    - `mcp__cclsp__get_diagnostics` - Check for errors after changes
+
     [Task 1 content extracted via get_task_content]
   run_in_background: true
 
@@ -226,6 +240,13 @@ Task:
   description: "Execute Task 2"
   prompt: |
     Execute Task 2 from plan. Follow TDD instructions exactly.
+
+    **Use LSP tools for accurate code navigation:**
+    - `mcp__cclsp__find_definition` - Find symbol definitions
+    - `mcp__cclsp__find_references` - Find all usages before modifying
+    - `mcp__cclsp__rename_symbol` - Safe refactoring across files
+    - `mcp__cclsp__get_diagnostics` - Check for errors after changes
+
     [Task 2 content extracted via get_task_content]
   run_in_background: true
 ```
@@ -279,6 +300,13 @@ Task:
   description: "Execute Task 5"
   prompt: |
     Execute Task 5 from plan. Follow TDD instructions exactly.
+
+    **Use LSP tools for accurate code navigation:**
+    - `mcp__cclsp__find_definition` - Find symbol definitions
+    - `mcp__cclsp__find_references` - Find all usages before modifying
+    - `mcp__cclsp__rename_symbol` - Safe refactoring across files
+    - `mcp__cclsp__get_diagnostics` - Check for errors after changes
+
     [Task 5 content]
   run_in_background: true
 ```
