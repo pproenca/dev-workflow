@@ -112,10 +112,11 @@ PLAN_FILE="$ARGUMENTS"
 TOTAL=$(frontmatter_get "$(get_state_file)" "total_tasks" "0")
 
 # Analyze parallel groups to determine teammateCount
-GROUPS=$(group_tasks_by_dependency "$PLAN_FILE" "$TOTAL" 5)
-GROUP_COUNT=$(echo "$GROUPS" | tr '|' '\n' | wc -l | tr -d ' ')
+# NOTE: Use TASK_GROUPS not GROUPS (GROUPS is a bash special variable)
+TASK_GROUPS=$(group_tasks_by_dependency "$PLAN_FILE" "$TOTAL" 5)
+GROUP_COUNT=$(echo "$TASK_GROUPS" | tr '|' '\n' | wc -l | tr -d ' ')
 
-echo "PARALLEL_GROUPS: $GROUPS"
+echo "PARALLEL_GROUPS: $TASK_GROUPS"
 echo "GROUP_COUNT: $GROUP_COUNT"
 
 # Calculate teammateCount (max parallelism from groups)
