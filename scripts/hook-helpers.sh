@@ -74,7 +74,7 @@ create_state_file() {
   state_file=$(get_state_file) || return 1
 
   local total_tasks
-  total_tasks=$(grep -c "^### Task [0-9]\+:" "$plan_file" 2>/dev/null || echo "0")
+  total_tasks=$(grep -cE "^### Task [0-9]+(\.[0-9]+)?:" "$plan_file" 2>/dev/null || echo "0")
 
   mkdir -p "$(dirname "$state_file")"
   cat > "$state_file" << EOF
@@ -95,30 +95,67 @@ delete_state_file() {
   rm -f "$state_file"
 }
 
+# Extract all task numbers from a plan file
+# Usage: get_task_numbers <plan_file>
+# Returns: Space-separated list of task numbers (e.g., "1 1.1 1.2 2 3")
+get_task_numbers() {
+  local plan_file="$1"
+  grep -oE "^### Task [0-9]+(\.[0-9]+)?:" "$plan_file" | \
+    sed 's/^### Task //' | sed 's/:$//' | tr '\n' ' ' | sed 's/ $//'
+}
+
+# Get the next task number in sequence (for awk range extraction)
+# Usage: get_next_task_number <plan_file> <current_task_num>
+# Returns: Next task number or empty string if last task
+get_next_task_number() {
+  local plan_file="$1"
+  local current="$2"
+  local found_current=false
+
+  for num in $(get_task_numbers "$plan_file"); do
+    if [[ "$found_current" == "true" ]]; then
+      echo "$num"
+      return
+    fi
+    if [[ "$num" == "$current" ]]; then
+      found_current=true
+    fi
+  done
+  echo ""
+}
+
 # Extract file paths from a task section
 # Usage: get_task_files <plan_file> <task_num>
 # Returns: List of file paths (one per line)
 get_task_files() {
   local plan_file="$1"
   local task_num="$2"
-  local next_task=$((task_num + 1))
+  local next_task
+  next_task=$(get_next_task_number "$plan_file" "$task_num")
+
+  # Build awk pattern - if no next task, match until next section
+  local end_pattern
+  if [[ -n "$next_task" ]]; then
+    end_pattern="/^### Task ${next_task}:|^## /"
+  else
+    end_pattern="/^## /"
+  fi
 
   # Extract task section and find file paths in backticks after Create/Modify/Test:
   # shellcheck disable=SC2016 # Backtick regex is intentional - matching literal backticks
-  awk "/^### Task ${task_num}:/,/^### Task ${next_task}:|^## /" "$plan_file" | \
+  awk "/^### Task ${task_num}:/,${end_pattern}" "$plan_file" | \
     grep -E '(Create|Modify|Test):' | \
     grep -oE '`[^`]+`' | tr -d '`' | sort -u
 }
 
 # Group tasks by file dependencies for parallel execution
-# Usage: group_tasks_by_dependency <plan_file> <total_tasks> [max_group_size]
-# Output: group1:1,2,3|group2:4,5|group3:6,7,8,9
+# Usage: group_tasks_by_dependency <plan_file> [max_group_size]
+# Output: group1:1,1.1,1.2|group2:2,3|group3:4,4.1
 # Tasks within a group have NO file overlap (can run in parallel)
 # Groups execute serially (group 1 completes before group 2)
 group_tasks_by_dependency() {
   local plan_file="$1"
-  local total_tasks="$2"
-  local max_group="${3:-5}"  # Default max 5 per group (Anthropic pattern)
+  local max_group="${2:-5}"  # Default max 5 per group (Anthropic pattern)
 
   local groups=""
   local current_group=""
@@ -126,9 +163,10 @@ group_tasks_by_dependency() {
   local group_count=0
   local group_num=1
 
-  for ((i=1; i<=total_tasks; i++)); do
+  # Iterate through actual task numbers from plan
+  for task_num in $(get_task_numbers "$plan_file"); do
     local task_files
-    task_files=$(get_task_files "$plan_file" "$i")
+    task_files=$(get_task_files "$plan_file" "$task_num")
 
     # Check if task overlaps with current group
     local has_overlap=false
@@ -147,12 +185,12 @@ group_tasks_by_dependency() {
         group_num=$((group_num + 1))
       fi
       # Start new group with this task
-      current_group="$i"
+      current_group="$task_num"
       current_group_files="$task_files"
       group_count=1
     else
       # Add to current group
-      [[ -n "$current_group" ]] && current_group="${current_group},$i" || current_group="$i"
+      [[ -n "$current_group" ]] && current_group="${current_group},$task_num" || current_group="$task_num"
       current_group_files="${current_group_files}"$'\n'"${task_files}"
       group_count=$((group_count + 1))
     fi
@@ -197,10 +235,26 @@ get_max_parallel_from_groups() {
 get_task_content() {
   local plan_file="$1"
   local task_num="$2"
-  local next_task=$((task_num + 1))
+  local next_task
+  next_task=$(get_next_task_number "$plan_file" "$task_num")
+
+  # Build awk pattern - if no next task, match until next section
+  local end_pattern
+  local sed_filter=""
+  if [[ -n "$next_task" ]]; then
+    end_pattern="/^### Task ${next_task}:|^## [^#]/"
+    sed_filter='/^### Task '"${next_task}"':/d'
+  else
+    end_pattern="/^## [^#]/"
+  fi
 
   # Extract from "### Task N:" to next task or end of section
-  awk "/^### Task ${task_num}:/,/^### Task ${next_task}:|^## [^#]/" "$plan_file" | \
-    sed '/^### Task '"${next_task}"':/d' | \
-    sed '/^## [^#]/d'
+  if [[ -n "$sed_filter" ]]; then
+    awk "/^### Task ${task_num}:/,${end_pattern}" "$plan_file" | \
+      sed "$sed_filter" | \
+      sed '/^## [^#]/d'
+  else
+    awk "/^### Task ${task_num}:/,${end_pattern}" "$plan_file" | \
+      sed '/^## [^#]/d'
+  fi
 }

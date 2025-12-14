@@ -49,7 +49,7 @@ echo "TOTAL_TASKS: $TOTAL"
 Extract task titles and create TodoWrite items:
 
 ```bash
-grep -E "^### Task [0-9]+:" "$PLAN_FILE" | sed 's/^### Task \([0-9]*\): \(.*\)/Task \1: \2/'
+grep -E "^### Task [0-9]+(\.[0-9]+)?:" "$PLAN_FILE" | sed 's/^### Task \([0-9.]*\): \(.*\)/Task \1: \2/'
 ```
 
 Create TodoWrite with:
@@ -113,13 +113,11 @@ Uses `Task(run_in_background)` + `TaskOutput` pattern from tools.md to execute t
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 PLAN_FILE="$ARGUMENTS"
-STATE_FILE="$(get_state_file)"
-TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
 
 # Group tasks by file dependencies
 # Tasks in same group have NO file overlap → can run parallel
 # Groups execute serially (group1 completes before group2 starts)
-TASK_GROUPS=$(group_tasks_by_dependency "$PLAN_FILE" "$TOTAL" 5)
+TASK_GROUPS=$(group_tasks_by_dependency "$PLAN_FILE" 5)
 MAX_PARALLEL=$(get_max_parallel_from_groups "$TASK_GROUPS")
 
 echo "TASK_GROUPS: $TASK_GROUPS"
