@@ -97,7 +97,7 @@ AskUserQuestion:
   multiSelect: false
   options:
     - label: "Create plan"
-      description: "Use EnterPlanMode to create detailed implementation plan"
+      description: "Use /dev-workflow:write-plan to create detailed implementation plan"
     - label: "Keep exploring"
       description: "Continue refining the design"
     - label: "Done"
@@ -105,10 +105,12 @@ AskUserQuestion:
 ```
 
 **If "Create plan" selected:**
-1. Read the saved design document
-2. Use `EnterPlanMode` to enter planning mode
-3. Follow the Planning Methodology from getting-started skill
-4. Reference the design document when writing the plan
+
+```text
+/dev-workflow:write-plan @docs/plans/[design-file].md
+```
+
+This invokes the write-plan command with the design document as context.
 
 ## Principles
 

@@ -86,6 +86,49 @@ See `references/skill-integration.md` for decision tree and skill chains.
 
 ---
 
+## Planning Workflows
+
+Two planning workflows are available:
+
+| Workflow | When to Use |
+|----------|-------------|
+| **Plugin Commands** (Recommended) | Full features, plans persist to `docs/plans/` |
+| **Native Plan Mode** | Quick iterations, ephemeral plans |
+
+### Plugin Commands Flow (Recommended)
+
+```
+/dev-workflow:brainstorm → /dev-workflow:write-plan → /dev-workflow:execute-plan
+```
+
+- Plans saved to `docs/plans/YYYY-MM-DD-<feature>.md`
+- Orchestrated execution with progress tracking
+- Automatic post-completion actions (code review, finish branch)
+- Resume capability if session ends
+
+### Native Plan Mode Flow
+
+```
+EnterPlanMode → ExitPlanMode(launchSwarm: true)
+```
+
+- Plans saved to `.claude/plans/` (ephemeral)
+- Faster for simple features
+- Manual post-swarm actions required
+
+**Choose Plugin Commands when:**
+- Plan should be version controlled
+- Feature has 5+ tasks
+- You want orchestrated parallel execution
+- Resume capability is important
+
+**Choose Native Plan Mode when:**
+- Quick prototyping
+- Simple 1-3 task features
+- Plan doesn't need to persist
+
+---
+
 ## Planning Methodology (EnterPlanMode)
 
 When entering plan mode via `EnterPlanMode`, use this methodology:
