@@ -97,27 +97,29 @@ See `references/skill-integration.md` for decision tree and skill chains.
 | Feature | Benefit |
 |---------|---------|
 | Plans persist to `docs/plans/` | Version controlled, reviewable |
-| Native swarm via `EnterPlanMode` + `ExitPlanMode` | Claude Code's parallel execution |
-| Task grouping by file overlap | Determines optimal `teammateCount` |
+| Parallel via `Task(run_in_background)` + `TaskOutput` | Respects task dependencies |
+| Task grouping by file overlap | Determines which tasks can run parallel |
 | Automatic post-completion | Code review + finish branch enforced |
-| Resume capability | `SubagentStop` hook tracks progress |
+| Resume capability | Orchestrator tracks progress per group |
 
-### How Native Swarm Integration Works
+### How Parallel Execution Works
 
-The `/dev-workflow:execute-plan` command integrates with Claude Code's native swarm:
+The `/dev-workflow:execute-plan` command uses background agents for parallelism:
 
 ```
-1. EnterPlanMode                    # Enter native plan mode
-2. Read plan from docs/plans/...    # Our persisted plan
-3. Write to native plan file        # System reads from here
-4. ExitPlanMode(launchSwarm: true)  # Launch native swarm
+1. Analyze task groups by file dependencies
+2. FOR each group (groups execute serially):
+   a. Launch tasks in group with Task(run_in_background: true)
+   b. Wait for all with TaskOutput(block: true)
+   c. Update state: current_task = last task in group
+3. Proceed to post-completion actions
 ```
 
 This approach:
 - Preserves plan in `docs/plans/` for version control
-- Uses native plan mode UX (user approval flow)
-- Leverages native swarm for parallel execution
-- `SubagentStop` hook fires for each teammate → updates state
+- Respects task dependencies (groups are serial, tasks within group are parallel)
+- No context leak (task content passed to agents only)
+- Accurate progress tracking (state updated after confirmed completion)
 
 ### When to Use Native `EnterPlanMode` Directly
 
@@ -283,7 +285,7 @@ Use `ExitPlanMode(launchSwarm: true, teammateCount: N)` to spawn parallel teamma
 
 ### State Persistence (Resume Capability)
 
-After `ExitPlanMode(launchSwarm: true)`, create a state file for resume:
+Before executing tasks, create a state file for resume:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
@@ -296,7 +298,14 @@ This creates `.claude/dev-workflow-state.local.md` with:
 - Total tasks
 - Base commit SHA
 
-**State updates automatically** via `SubagentStop` hook when each teammate completes.
+**State is updated by the orchestrator** after each group of parallel tasks completes:
+
+```bash
+# After group completes (all TaskOutput calls return)
+frontmatter_set "$STATE_FILE" "current_task" "[LAST_TASK_IN_GROUP]"
+```
+
+This ensures `current_task` accurately reflects which tasks are definitely complete.
 
 **If session ends unexpectedly**, the next session will detect the state file and prompt:
 ```
@@ -316,9 +325,9 @@ source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 delete_state_file
 ```
 
-### Post-Swarm Actions
+### Post-Execution Actions
 
-After swarm completes, the main session must:
+After all tasks complete, the orchestrator must:
 
 1. **Code Review** - Dispatch code-reviewer agent:
    ```claude

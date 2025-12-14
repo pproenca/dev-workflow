@@ -100,70 +100,115 @@ Mark task `completed` in TodoWrite. Continue to next task.
 
 ---
 
-## Parallel Execution (Native Swarm)
+## Parallel Execution (Background Agents)
 
-Leverages Claude Code's native swarm by entering plan mode with our plan content.
+Uses `Task(run_in_background)` + `TaskOutput` pattern from tools.md to execute tasks in parallel while respecting dependencies.
 
-### 3a. Analyze Plan for Swarm
+### 3a. Analyze Task Groups
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 PLAN_FILE="$ARGUMENTS"
-TOTAL=$(frontmatter_get "$(get_state_file)" "total_tasks" "0")
+STATE_FILE="$(get_state_file)"
+TOTAL=$(frontmatter_get "$STATE_FILE" "total_tasks" "0")
 
-# Analyze parallel groups to determine teammateCount
-# NOTE: Use TASK_GROUPS not GROUPS (GROUPS is a bash special variable)
+# Group tasks by file dependencies
+# Tasks in same group have NO file overlap → can run parallel
+# Groups execute serially (group1 completes before group2 starts)
 TASK_GROUPS=$(group_tasks_by_dependency "$PLAN_FILE" "$TOTAL" 5)
-GROUP_COUNT=$(echo "$TASK_GROUPS" | tr '|' '\n' | wc -l | tr -d ' ')
+MAX_PARALLEL=$(get_max_parallel_from_groups "$TASK_GROUPS")
 
-echo "PARALLEL_GROUPS: $TASK_GROUPS"
-echo "GROUP_COUNT: $GROUP_COUNT"
-
-# Calculate teammateCount (max parallelism from groups)
-# 1-2 groups: 2 teammates | 3-4 groups: 3-4 | 5+: 5 max
+echo "TASK_GROUPS: $TASK_GROUPS"
+echo "MAX_PARALLEL: $MAX_PARALLEL"
 ```
 
-### 3b. Enter Plan Mode
+### 3b. Execute Groups Serially, Tasks in Parallel
 
-Use `EnterPlanMode` to transition into native plan mode:
+For each group in `TASK_GROUPS` (split by `|`):
+
+**If group has multiple tasks** (e.g., `group1:1,2,3`):
+
+1. Launch ALL tasks in the group simultaneously using `Task(run_in_background: true)`:
 
 ```claude
-EnterPlanMode
+# Launch in SINGLE message for true parallelism
+Task:
+  subagent_type: general-purpose
+  description: "Execute Task 1"
+  prompt: |
+    Execute Task 1 from plan. Follow TDD instructions exactly.
+    [Task 1 content extracted via get_task_content]
+  run_in_background: true
+
+Task:
+  subagent_type: general-purpose
+  description: "Execute Task 2"
+  prompt: |
+    Execute Task 2 from plan. Follow TDD instructions exactly.
+    [Task 2 content extracted via get_task_content]
+  run_in_background: true
 ```
 
-### 3c. Write Our Plan to Native Plan File
+2. Wait for ALL agents in the group to complete:
 
-Once in plan mode, read our persisted plan and write to the native plan file:
+```claude
+# Wait for all background agents
+TaskOutput:
+  task_id: [agent_id_1]
+  block: true
+
+TaskOutput:
+  task_id: [agent_id_2]
+  block: true
+```
+
+3. Update state after group completes:
 
 ```bash
-# Read our plan from docs/plans/
-PLAN_CONTENT=$(cat "$PLAN_FILE")
-echo "$PLAN_CONTENT"
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+STATE_FILE="$(get_state_file)"
+# Set to last task number in completed group
+frontmatter_set "$STATE_FILE" "current_task" "[LAST_TASK_IN_GROUP]"
 ```
 
-Write this content to the native plan file (the system provides the path during plan mode).
+4. Mark completed tasks in TodoWrite.
 
-**Important:** The plan is already in the correct task format (`### Task N: [Name]`) from `/dev-workflow:write-plan`.
+**If group has single task** (e.g., `group3:5`):
 
-### 3d. Exit with Native Swarm
+Execute foreground (no background needed):
 
 ```claude
-ExitPlanMode:
-  launchSwarm: true
-  teammateCount: [GROUP_COUNT, max 5]
+Task:
+  subagent_type: general-purpose
+  description: "Execute Task 5"
+  prompt: |
+    Execute Task 5 from plan. Follow TDD instructions exactly.
+    [Task 5 content]
 ```
 
-The native swarm:
-- Reads our plan from the plan file
-- Spawns teammates to execute tasks in parallel
-- Each teammate follows the TDD instructions embedded in tasks
-- `SubagentStop` hook fires for each completion → updates state file
+Update state and TodoWrite after completion.
 
-### 3e. After Swarm Completes
+### 3c. Why This Pattern Works
 
-The swarm executes autonomously. When all teammates finish:
-- State file reflects completed task count (via SubagentStop hook)
-- Proceed to Post-Completion Actions
+| Aspect | Benefit |
+|--------|---------|
+| **Dependencies respected** | Groups execute serially; Task 3 waits for Task 1 |
+| **True parallelism** | Tasks in same group run simultaneously |
+| **No context leak** | Task content passed to agents, not loaded into orchestrator |
+| **Accurate progress** | `current_task` updated after confirmed group completion |
+| **Resume works** | `current_task=2` means tasks 1-2 definitely done |
+
+### 3d. Extracting Task Content
+
+Use helper to get task content for agent prompt:
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+TASK_CONTENT=$(get_task_content "$PLAN_FILE" 1)
+echo "$TASK_CONTENT"
+```
+
+This extracts the full task section including TDD instructions without loading entire plan.
 
 ---
 

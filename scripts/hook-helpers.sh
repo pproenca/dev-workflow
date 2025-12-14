@@ -166,3 +166,41 @@ group_tasks_by_dependency() {
 
   echo "$groups"
 }
+
+# Get maximum parallelism from task groups
+# Usage: get_max_parallel_from_groups <groups_string>
+# Input: "group1:1,2,3|group2:4,5|group3:6"
+# Output: 3 (largest group has 3 tasks)
+get_max_parallel_from_groups() {
+  local groups="$1"
+  local max_parallel=1
+
+  # Split by | and find largest group
+  IFS='|' read -ra GROUP_ARRAY <<< "$groups"
+  for group in "${GROUP_ARRAY[@]}"; do
+    # Extract task list after colon
+    local task_list="${group#*:}"
+    # Count tasks (comma-separated)
+    local task_count
+    task_count=$(echo "$task_list" | tr ',' '\n' | wc -l | tr -d ' ')
+    if [[ "$task_count" -gt "$max_parallel" ]]; then
+      max_parallel="$task_count"
+    fi
+  done
+
+  echo "$max_parallel"
+}
+
+# Extract task section content from plan
+# Usage: get_task_content <plan_file> <task_num>
+# Returns: Full task section including TDD instructions
+get_task_content() {
+  local plan_file="$1"
+  local task_num="$2"
+  local next_task=$((task_num + 1))
+
+  # Extract from "### Task N:" to next task or end of section
+  awk "/^### Task ${task_num}:/,/^### Task ${next_task}:|^## [^#]/" "$plan_file" | \
+    sed '/^### Task '"${next_task}"':/d' | \
+    sed '/^## [^#]/d'
+}
