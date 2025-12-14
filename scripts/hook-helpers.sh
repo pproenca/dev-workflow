@@ -144,7 +144,7 @@ group_tasks_by_dependency() {
       if [[ -n "$current_group" ]]; then
         [[ -n "$groups" ]] && groups="${groups}|"
         groups="${groups}group${group_num}:${current_group}"
-        ((group_num++))
+        group_num=$((group_num + 1))
       fi
       # Start new group with this task
       current_group="$i"
@@ -154,7 +154,7 @@ group_tasks_by_dependency() {
       # Add to current group
       [[ -n "$current_group" ]] && current_group="${current_group},$i" || current_group="$i"
       current_group_files="${current_group_files}"$'\n'"${task_files}"
-      ((group_count++))
+      group_count=$((group_count + 1))
     fi
   done
 
