@@ -861,3 +861,145 @@ EOF
   echo "$result" | grep -q "group1:1"
   echo "$result" | grep -q "group2:1.1"
 }
+
+# ============================================================================
+# Dispatched agent tracking tests (compact recovery)
+# ============================================================================
+
+@test "create_state_file: includes dispatched_group field (empty by default)" {
+  cd "$TEST_DIR"
+  git init
+  git config user.email "test@test.com"
+  git config user.name "Test"
+  echo "test" > file.txt
+  git add file.txt
+  git commit -m "Initial"
+
+  cat > "$TEST_DIR/plan.md" << 'EOF'
+### Task 1: First task
+Content
+EOF
+
+  create_state_file "$TEST_DIR/plan.md"
+
+  state_file="$TEST_DIR/.claude/dev-workflow-state.local.md"
+  # Field MUST exist (NOT_FOUND means field is missing)
+  grep -q "^dispatched_group:" "$state_file"
+  dispatched=$(frontmatter_get "$state_file" "dispatched_group" "NOT_FOUND")
+  [[ "$dispatched" == "" ]] || [[ "$dispatched" == "NOT_FOUND" ]]
+}
+
+@test "create_state_file: includes agent_ids field (empty by default)" {
+  cd "$TEST_DIR"
+  git init
+  git config user.email "test@test.com"
+  git config user.name "Test"
+  echo "test" > file.txt
+  git add file.txt
+  git commit -m "Initial"
+
+  cat > "$TEST_DIR/plan.md" << 'EOF'
+### Task 1: First task
+Content
+EOF
+
+  create_state_file "$TEST_DIR/plan.md"
+
+  state_file="$TEST_DIR/.claude/dev-workflow-state.local.md"
+  # Field MUST exist (NOT_FOUND means field is missing)
+  grep -q "^agent_ids:" "$state_file"
+  agent_ids=$(frontmatter_get "$state_file" "agent_ids" "NOT_FOUND")
+  [[ "$agent_ids" == "" ]] || [[ "$agent_ids" == "NOT_FOUND" ]]
+}
+
+@test "frontmatter_set: dispatched_group with comma-separated tasks" {
+  cat > "$TEST_DIR/test.md" << 'EOF'
+---
+plan: /path/to/plan.md
+current_task: 0
+dispatched_group:
+agent_ids:
+---
+Content
+EOF
+
+  frontmatter_set "$TEST_DIR/test.md" "dispatched_group" "group1:1,2,3,4,5"
+  result=$(frontmatter_get "$TEST_DIR/test.md" "dispatched_group")
+  [[ "$result" == "group1:1,2,3,4,5" ]]
+}
+
+@test "frontmatter_set: agent_ids with comma-separated IDs" {
+  cat > "$TEST_DIR/test.md" << 'EOF'
+---
+plan: /path/to/plan.md
+current_task: 0
+dispatched_group:
+agent_ids:
+---
+Content
+EOF
+
+  frontmatter_set "$TEST_DIR/test.md" "agent_ids" "ag1abc,ag2def,ag3ghi"
+  result=$(frontmatter_get "$TEST_DIR/test.md" "agent_ids")
+  [[ "$result" == "ag1abc,ag2def,ag3ghi" ]]
+}
+
+@test "frontmatter_set: clear dispatched_group after completion" {
+  cat > "$TEST_DIR/test.md" << 'EOF'
+---
+plan: /path/to/plan.md
+current_task: 0
+dispatched_group: group1:1,2,3
+agent_ids: ag1,ag2,ag3
+---
+Content
+EOF
+
+  # Clear after group completes
+  frontmatter_set "$TEST_DIR/test.md" "dispatched_group" ""
+  frontmatter_set "$TEST_DIR/test.md" "agent_ids" ""
+
+  dispatched=$(frontmatter_get "$TEST_DIR/test.md" "dispatched_group" "default")
+  agent_ids=$(frontmatter_get "$TEST_DIR/test.md" "agent_ids" "default")
+
+  [[ "$dispatched" == "default" ]] || [[ "$dispatched" == "" ]]
+  [[ "$agent_ids" == "default" ]] || [[ "$agent_ids" == "" ]]
+}
+
+@test "integration: dispatched state roundtrip for compact recovery" {
+  cat > "$TEST_DIR/test.md" << 'EOF'
+---
+plan: /path/to/plan.md
+current_task: 0
+total_tasks: 7
+dispatched_group:
+agent_ids:
+base_sha: abc123
+---
+EOF
+
+  # Simulate: orchestrator dispatches agents
+  frontmatter_set "$TEST_DIR/test.md" "dispatched_group" "group1:1,2,3,4,5"
+  frontmatter_set "$TEST_DIR/test.md" "agent_ids" "ag1abc,ag2def,ag3ghi,ag4jkl,ag5mno"
+
+  # Simulate: after compact, read state to recover
+  recovered_group=$(frontmatter_get "$TEST_DIR/test.md" "dispatched_group")
+  recovered_ids=$(frontmatter_get "$TEST_DIR/test.md" "agent_ids")
+
+  [[ "$recovered_group" == "group1:1,2,3,4,5" ]]
+  [[ "$recovered_ids" == "ag1abc,ag2def,ag3ghi,ag4jkl,ag5mno" ]]
+
+  # Simulate: after TaskOutput completes, clear and update
+  frontmatter_set "$TEST_DIR/test.md" "dispatched_group" ""
+  frontmatter_set "$TEST_DIR/test.md" "agent_ids" ""
+  frontmatter_set "$TEST_DIR/test.md" "current_task" "5"
+
+  # Verify final state
+  final_group=$(frontmatter_get "$TEST_DIR/test.md" "dispatched_group" "cleared")
+  final_ids=$(frontmatter_get "$TEST_DIR/test.md" "agent_ids" "cleared")
+  final_task=$(frontmatter_get "$TEST_DIR/test.md" "current_task")
+
+  [[ "$final_group" == "cleared" ]] || [[ "$final_group" == "" ]]
+  [[ "$final_ids" == "cleared" ]] || [[ "$final_ids" == "" ]]
+  [[ "$final_task" == "5" ]]
+}

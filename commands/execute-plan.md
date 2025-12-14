@@ -75,9 +75,25 @@ AskUserQuestion:
 
 ## Sequential Execution
 
-For each task in order:
+Execute tasks one by one using background agents (keeps orchestrator context minimal).
 
-### 3a. Read and Execute Task
+### 3a. Check for Interrupted Dispatch (Compact Recovery)
+
+Same as parallel execution - check if a previous task was interrupted:
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+STATE_FILE="$(get_state_file)"
+DISPATCHED_AGENTS=$(frontmatter_get "$STATE_FILE" "agent_ids" "")
+
+if [[ -n "$DISPATCHED_AGENTS" ]]; then
+  echo "RECOVERING: Resuming interrupted task with agent $DISPATCHED_AGENTS"
+fi
+```
+
+If `DISPATCHED_AGENTS` is not empty, call `TaskOutput` for that agent, then clear state and continue.
+
+### 3b. Execute Each Task
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
@@ -89,14 +105,44 @@ echo "EXECUTING: Task $NEXT"
 
 Mark task `in_progress` in TodoWrite.
 
-Extract task section from plan. Use `Skill("dev-workflow:test-driven-development")` to implement.
+Launch task in background:
 
-### 3b. Update State After Each Task
+```claude
+Task:
+  subagent_type: general-purpose
+  model: sonnet
+  description: "Execute Task [N]"
+  prompt: |
+    Execute Task [N] from plan. Follow TDD instructions exactly.
+    [Task content extracted via get_task_content]
+  run_in_background: true
+```
+
+Persist state immediately:
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+STATE_FILE="$(get_state_file)"
+frontmatter_set "$STATE_FILE" "dispatched_group" "sequential:$NEXT"
+frontmatter_set "$STATE_FILE" "agent_ids" "[agent_id]"
+```
+
+Wait for completion:
+
+```claude
+TaskOutput:
+  task_id: [agent_id]
+  block: true
+```
+
+### 3c. Update State After Each Task
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 STATE_FILE="$(get_state_file)"
 CURRENT=$(frontmatter_get "$STATE_FILE" "current_task" "0")
+frontmatter_set "$STATE_FILE" "dispatched_group" ""
+frontmatter_set "$STATE_FILE" "agent_ids" ""
 frontmatter_set "$STATE_FILE" "current_task" "$((CURRENT + 1))"
 ```
 
@@ -108,7 +154,38 @@ Mark task `completed` in TodoWrite. Continue to next task.
 
 Uses `Task(run_in_background)` + `TaskOutput` pattern from tools.md to execute tasks in parallel while respecting dependencies.
 
-### 3a. Analyze Task Groups
+### 3a. Check for Interrupted Dispatch (Compact Recovery)
+
+**CRITICAL:** Before analyzing groups, check if a previous dispatch was interrupted by compaction:
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+STATE_FILE="$(get_state_file)"
+DISPATCHED_AGENTS=$(frontmatter_get "$STATE_FILE" "agent_ids" "")
+DISPATCHED_GROUP=$(frontmatter_get "$STATE_FILE" "dispatched_group" "")
+
+echo "DISPATCHED_AGENTS: $DISPATCHED_AGENTS"
+echo "DISPATCHED_GROUP: $DISPATCHED_GROUP"
+```
+
+**If `DISPATCHED_AGENTS` is not empty:** Agents were launched but TaskOutput was interrupted. Resume waiting:
+
+1. Parse agent IDs from `DISPATCHED_AGENTS` (comma-separated)
+2. Call `TaskOutput` for each agent ID (they may already be complete - results return immediately)
+3. Clear dispatched state after all TaskOutput calls return:
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+STATE_FILE="$(get_state_file)"
+frontmatter_set "$STATE_FILE" "dispatched_group" ""
+frontmatter_set "$STATE_FILE" "agent_ids" ""
+# Update current_task to last task in recovered group
+frontmatter_set "$STATE_FILE" "current_task" "[LAST_TASK_IN_RECOVERED_GROUP]"
+```
+
+4. Continue to next group (skip re-analyzing, use state's `current_task` to determine progress)
+
+### 3b. Analyze Task Groups
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
@@ -153,7 +230,18 @@ Task:
   run_in_background: true
 ```
 
-2. Wait for ALL agents in the group to complete:
+2. **IMMEDIATELY persist agent IDs to state** (before calling TaskOutput):
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+STATE_FILE="$(get_state_file)"
+# Persist agent IDs so they survive compaction
+frontmatter_set "$STATE_FILE" "dispatched_group" "group1:1,2"
+frontmatter_set "$STATE_FILE" "agent_ids" "agent_id_1,agent_id_2"
+echo "STATE PERSISTED: dispatched_group and agent_ids saved"
+```
+
+3. Wait for ALL agents in the group to complete:
 
 ```claude
 # Wait for all background agents
@@ -166,20 +254,23 @@ TaskOutput:
   block: true
 ```
 
-3. Update state after group completes:
+4. Update state after group completes (clear dispatched, update current_task):
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
 STATE_FILE="$(get_state_file)"
+# Clear dispatched state now that group is complete
+frontmatter_set "$STATE_FILE" "dispatched_group" ""
+frontmatter_set "$STATE_FILE" "agent_ids" ""
 # Set to last task number in completed group
 frontmatter_set "$STATE_FILE" "current_task" "[LAST_TASK_IN_GROUP]"
 ```
 
-4. Mark completed tasks in TodoWrite.
+5. Mark completed tasks in TodoWrite.
 
 **If group has single task** (e.g., `group3:5`):
 
-Execute foreground (no background needed):
+Still use background execution to keep orchestrator context minimal:
 
 ```claude
 Task:
@@ -189,9 +280,33 @@ Task:
   prompt: |
     Execute Task 5 from plan. Follow TDD instructions exactly.
     [Task 5 content]
+  run_in_background: true
 ```
 
-Update state and TodoWrite after completion.
+Then persist state, wait, and update (same pattern as multi-task groups):
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+STATE_FILE="$(get_state_file)"
+frontmatter_set "$STATE_FILE" "dispatched_group" "group3:5"
+frontmatter_set "$STATE_FILE" "agent_ids" "[agent_id]"
+```
+
+```claude
+TaskOutput:
+  task_id: [agent_id]
+  block: true
+```
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
+STATE_FILE="$(get_state_file)"
+frontmatter_set "$STATE_FILE" "dispatched_group" ""
+frontmatter_set "$STATE_FILE" "agent_ids" ""
+frontmatter_set "$STATE_FILE" "current_task" "5"
+```
+
+Update TodoWrite after completion.
 
 ### 3c. Why This Pattern Works
 

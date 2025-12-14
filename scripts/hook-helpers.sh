@@ -51,7 +51,8 @@ frontmatter_set() {
   escaped_value="${escaped_value//&/\\&}"
 
   # Use | delimiter to avoid conflicts with / in paths
-  sed "s|^${key}: .*|${key}: ${escaped_value}|" "$file" > "$temp"
+  # Pattern: ^key:.* matches both "key: value" and "key:" (empty value)
+  sed "s|^${key}:.*|${key}: ${escaped_value}|" "$file" > "$temp"
   mv "$temp" "$file"
 }
 
@@ -68,6 +69,7 @@ get_state_file() {
 # Create minimal state file for workflow resume
 # Usage: create_state_file <plan_file>
 # Creates: .claude/dev-workflow-state.local.md with plan, current_task, total_tasks, base_sha
+# Also includes dispatched_group and agent_ids for compact recovery
 create_state_file() {
   local plan_file="$1"
   local state_file
@@ -82,6 +84,8 @@ create_state_file() {
 plan: $plan_file
 current_task: 0
 total_tasks: $total_tasks
+dispatched_group:
+agent_ids:
 base_sha: $(git rev-parse HEAD)
 ---
 EOF
