@@ -123,11 +123,14 @@ fi
 
 **While CURRENT < TOTAL:**
 
-Dispatch parallel group orchestrator (Anthropic pattern):
+Dispatch parallel group orchestrator in background (Anthropic pattern):
 
 ```claude
-Task tool:
+Task:
+  subagent_type: general-purpose
+  description: "Execute task group"
   model: opus
+  run_in_background: true
   prompt: |
     Execute next parallel group of tasks.
 
@@ -148,7 +151,16 @@ Task tool:
     Execute ONE group, then return. Do NOT proceed to Final Code Review.
 ```
 
-After group returns, check progress:
+**Store the returned task_id**, then wait for orchestrator to complete:
+
+```claude
+TaskOutput:
+  task_id: [task_id from above]
+  block: true
+  timeout: 600000
+```
+
+After orchestrator returns, check progress:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
@@ -334,11 +346,14 @@ fi
 
 **While CURRENT < TOTAL:**
 
-Dispatch parallel group orchestrator:
+Dispatch parallel group orchestrator in background:
 
 ```claude
-Task tool:
+Task:
+  subagent_type: general-purpose
+  description: "Execute task group"
   model: opus
+  run_in_background: true
   prompt: |
     Execute next parallel group of tasks.
 
@@ -359,7 +374,16 @@ Task tool:
     Execute ONE group, then return. Do NOT proceed to Final Code Review.
 ```
 
-After group returns, check progress:
+**Store the returned task_id**, then wait for orchestrator:
+
+```claude
+TaskOutput:
+  task_id: [task_id from above]
+  block: true
+  timeout: 600000
+```
+
+After orchestrator returns, check progress:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/scripts/hook-helpers.sh"
@@ -530,7 +554,9 @@ git diff "$BASE_SHA"..HEAD --stat
 Dispatch code-reviewer with explicit paths:
 
 ```claude
-Task tool (dev-workflow:code-reviewer):
+Task:
+  subagent_type: dev-workflow:code-reviewer
+  description: "Review plan changes"
   model: sonnet
   prompt: |
     Review changes from this plan.

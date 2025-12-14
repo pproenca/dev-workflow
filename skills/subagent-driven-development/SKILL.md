@@ -30,7 +30,9 @@ After loading this skill, execute all steps until "Workflow complete". Only perm
 | Pattern | Implementation |
 |---------|----------------|
 | **Background dispatch** | 3-5 subagents per group with `run_in_background: true` |
-| **TaskOutput polling** | Use TaskOutput to wait for background tasks to complete |
+| **Parallel wait** | Multiple TaskOutput calls in single message wait concurrently |
+| **Non-blocking poll** | TaskOutput with `block: false` for progress checks |
+| **Agent resume** | Use `resume: [agentId]` to continue failed/partial agents |
 | **Lightweight references** | Subagents write to filesystem, return commit SHA only |
 | **Progress log** | All events logged to `.claude/dev-workflow-progress.log` |
 | **Phase summaries** | Summarize completed work before next group |
@@ -208,7 +210,9 @@ This keeps the terminal responsive and interruptible while subagents execute in 
 For each task in the group, dispatch a background subagent with its ephemeral worktree path:
 
 ````claude
-Task tool:
+Task:
+  subagent_type: general-purpose
+  description: "Implement Task [TASK_NUM]"
   model: sonnet
   run_in_background: true
   prompt: |
@@ -269,10 +273,10 @@ Task tool:
 **Parallel dispatch example for group with tasks 1,2,3:**
 
 ```
-Send SINGLE message with THREE Task tool calls (all with run_in_background: true):
-- Task tool for Task 1 (sonnet, background) → returns task_id_1
-- Task tool for Task 2 (sonnet, background) → returns task_id_2
-- Task tool for Task 3 (sonnet, background) → returns task_id_3
+Send SINGLE message with THREE Task calls (all with run_in_background: true):
+- Task(subagent_type: general-purpose, description: "Implement Task 1", run_in_background: true) → returns task_id_1
+- Task(subagent_type: general-purpose, description: "Implement Task 2", run_in_background: true) → returns task_id_2
+- Task(subagent_type: general-purpose, description: "Implement Task 3", run_in_background: true) → returns task_id_3
 
 All three start concurrently. Terminal remains responsive (ctrl+c works).
 ```
@@ -281,29 +285,62 @@ All three start concurrently. Terminal remains responsive (ctrl+c works).
 
 ### 3d-wait. Wait for Background Tasks to Complete
 
-**Use TaskOutput to wait for each background task to complete.**
+**Use TaskOutput to wait for background tasks.** Two patterns available:
 
-For each task_id returned from 3d, call TaskOutput to block until that task finishes:
+#### Pattern A: Parallel Wait (Recommended)
+
+Call ALL TaskOutput tools in a SINGLE message to wait for all concurrently:
+
+````claude
+# Send ONE message with multiple TaskOutput calls:
+TaskOutput:
+  task_id: [task_id_1]
+  block: true
+  timeout: 300000
+
+TaskOutput:
+  task_id: [task_id_2]
+  block: true
+  timeout: 300000
+
+TaskOutput:
+  task_id: [task_id_3]
+  block: true
+  timeout: 300000
+````
+
+All three wait concurrently. Message returns when ALL complete.
+
+#### Pattern B: Polling (For Progress Updates)
+
+Use `block: false` for non-blocking status checks:
 
 ````claude
 TaskOutput:
-  task_id: [task_id from dispatch]
-  block: true
-  timeout: 300000  # 5 minutes per task
+  task_id: [task_id]
+  block: false  # Returns immediately with current status
 ````
 
-**Wait for ALL tasks in the group before proceeding:**
+Useful for:
+- Showing progress to user
+- Checking if any task failed early
+- Implementing custom timeout logic
 
-```
-For group with tasks 1,2,3:
-1. TaskOutput(task_id_1, block=true) → wait for Task 1
-2. TaskOutput(task_id_2, block=true) → wait for Task 2
-3. TaskOutput(task_id_3, block=true) → wait for Task 3
+#### Pattern C: Sequential with Resume
 
-All three have completed. Proceed to 3e (Process Group Results).
-```
+If a task needs follow-up work, use the returned `agentId` to resume:
 
-**Note:** You can call multiple TaskOutput tools in a single message to wait in parallel, or call them sequentially. The subagents are already running in the background regardless.
+````claude
+Task:
+  subagent_type: general-purpose
+  description: "Continue Task [N]"
+  resume: [agentId from previous TaskOutput]
+  prompt: "Continue with additional instructions..."
+````
+
+The resumed agent has full previous context preserved.
+
+**Proceed to 3e after all TaskOutput calls return.**
 
 ### 3e. Process Group Results
 
@@ -421,7 +458,9 @@ git diff "$BASE_SHA"..HEAD --stat
 Dispatch code-reviewer:
 
 ```claude
-Task tool (dev-workflow:code-reviewer):
+Task:
+  subagent_type: dev-workflow:code-reviewer
+  description: "Review all changes"
   model: sonnet
   prompt: |
     Review all changes in worktree.
@@ -481,11 +520,31 @@ If a task fails (no commit, test failure):
 cat ".claude/task-outputs/task-${TASK_NUM}.md"
 ```
 
-2. **Dispatch fix subagent** (escalate to opus):
+2. **FIRST: Try to resume the failed agent** (preserves full context):
 
 ```claude
-Task tool:
+Task:
+  subagent_type: general-purpose
+  description: "Retry Task [TASK_NUM]"
+  resume: [agentId from the failed task's TaskOutput]
+  prompt: |
+    Your previous attempt failed. Here's the error context:
+    [Content from output file]
+
+    Please diagnose the issue and complete the task.
+    Remember to commit when done.
+```
+
+The resumed agent has ALL previous context - no need to re-explain the task.
+
+3. **If resume unavailable, dispatch fix subagent** (escalate to opus):
+
+```claude
+Task:
+  subagent_type: general-purpose
+  description: "Fix Task [TASK_NUM]"
   model: opus
+  run_in_background: true
   prompt: |
     Task [TASK_NUM] failed. Fix and complete it.
 
@@ -508,7 +567,9 @@ Task tool:
     CONSTRAINT: Must commit before returning.
 ```
 
-3. **If fix fails twice**, use AskUserQuestion:
+Then use TaskOutput to wait for completion.
+
+4. **If fix fails twice**, use AskUserQuestion:
 
 ```claude
 AskUserQuestion:

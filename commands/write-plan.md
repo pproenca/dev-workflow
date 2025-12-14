@@ -42,10 +42,12 @@ AskUserQuestion:
 
 ## Step 2: Explore Codebase
 
-Dispatch code-explorer using Task tool:
+Dispatch code-explorer:
 
 ```claude
-Task tool (dev-workflow:code-explorer):
+Task:
+  subagent_type: dev-workflow:code-explorer
+  description: "Explore codebase"
   prompt: |
     Survey codebase for [feature]:
     1. Similar features - existing implementations to reference
@@ -77,10 +79,12 @@ Present using AskUserQuestion (one question at a time, 2-4 options each).
 
 ## Step 4: Design Architecture
 
-Dispatch code-architect using Task tool:
+Dispatch code-architect:
 
 ```claude
-Task tool (dev-workflow:code-architect):
+Task:
+  subagent_type: dev-workflow:code-architect
+  description: "Design architecture"
   prompt: |
     Design architecture for [feature] using exploration context.
 
